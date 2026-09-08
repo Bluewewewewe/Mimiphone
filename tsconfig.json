@@ -30,5 +30,5 @@
     ".next/dev/types/**/*.ts",
     "**/*.mts"
   ],
-  "exclude": ["node_modules", "dist", "public/mimi"]
+  "exclude": ["node_modules", "dist", "public/mimi", "__tests__", "**/*.test.ts", "**/*.test.tsx", "vitest.config.mjs"]
 }
