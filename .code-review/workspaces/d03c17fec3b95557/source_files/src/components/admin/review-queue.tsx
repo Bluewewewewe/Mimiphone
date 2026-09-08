@@ -364,46 +364,24 @@ export default function ReviewQueue({ currentAdminId, token: tokenProp }: { curr
                       {u.weibo_link && (
                         <div className="flex items-center gap-2 text-xs">
                           <span className="text-slate-400">链接：</span>
-                          {/^https?:\/\//i.test(u.weibo_link) ? (
-                            <a
-                              href={u.weibo_link}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="max-w-[200px] truncate text-indigo-300 underline hover:text-indigo-200"
-                              title={u.weibo_link}
-                            >
-                              {u.weibo_link}
-                            </a>
-                          ) : (
-                            <span
-                              className="max-w-[200px] truncate text-rose-400/70"
-                              title="链接格式异常"
-                            >
-                              {u.weibo_link}
-                            </span>
-                          )}
+                          <a
+                            href={u.weibo_link}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="max-w-[200px] truncate text-indigo-300 underline hover:text-indigo-200"
+                            title={u.weibo_link}
+                          >
+                            {u.weibo_link}
+                          </a>
                           <button
                             onClick={async () => {
                               try {
                                 await navigator.clipboard.writeText(u.weibo_link || "");
                               } catch {
-                                // fallback：非 HTTPS 环境降级到 execCommand
-                                try {
-                                  const ta = document.createElement("textarea");
-                                  ta.value = u.weibo_link || "";
-                                  ta.style.position = "fixed";
-                                  ta.style.opacity = "0";
-                                  document.body.appendChild(ta);
-                                  ta.select();
-                                  document.execCommand("copy");
-                                  document.body.removeChild(ta);
-                                } catch {
-                                  // 都失败时不再处理
-                                }
+                                // fallback
                               }
                             }}
                             className="rounded border border-indigo-500/30 bg-indigo-500/10 px-2 py-0.5 text-indigo-300 transition hover:bg-indigo-500/20"
-                            title="点击复制微博链接"
                           >
                             复制
                           </button>

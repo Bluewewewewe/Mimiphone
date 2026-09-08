@@ -1,0 +1,76 @@
+<!doctype html><html><head><meta charset='utf-8'><meta name='viewport' content='width=device-width, initial-scale=1'><title>Code Review Report</title>
+<style>
+:root{--canvas:#fff;--ink:#222;--body:#3f3f3f;--muted:#6a6a6a;--muted-soft:#929292;--rausch:#ff385c;--rausch-active:#e00b41;--rausch-disabled:#ffd1da;--surface-soft:#f7f7f7;--surface-strong:#f2f2f2;--hairline:#ddd;--hairline-soft:#ebebeb;--shadow:rgba(0,0,0,.02) 0 0 0 1px,rgba(0,0,0,.04) 0 2px 6px,rgba(0,0,0,.10) 0 4px 8px;--radius-sm:8px;--radius-md:14px;--radius-xl:32px;--radius-full:9999px}*{box-sizing:border-box}body{font-family:"Airbnb Cereal VF",Circular,-apple-system,system-ui,Roboto,"Helvetica Neue",sans-serif;line-height:1.5;margin:0;background:var(--canvas);color:var(--ink);font-size:16px}.wrap{max-width:1128px;margin:0 auto;padding:48px 32px 64px}.hero{display:grid;grid-template-columns:minmax(0,1fr) 280px;gap:32px;align-items:center;border-bottom:1px solid var(--hairline-soft);padding-bottom:32px;margin-bottom:24px}.brand{display:inline-flex;align-items:center;gap:8px;margin-bottom:18px;color:var(--rausch);font-size:14px;font-weight:600}.brand-orb{width:32px;height:32px;border-radius:var(--radius-full);background:var(--rausch);display:inline-grid;place-items:center;color:#fff;box-shadow:var(--shadow)}h1{font-size:28px;line-height:1.43;margin:0;font-weight:700;letter-spacing:0}h2{font-size:21px;line-height:1.43;margin:0 0 16px;font-weight:700}h3{font-size:16px;line-height:1.25;margin:0 0 12px;font-weight:600}.hero-copy{max-width:720px;color:var(--muted);margin:8px 0 0}.hero-panel{border:1px solid var(--hairline);border-radius:var(--radius-md);padding:16px 18px;background:linear-gradient(135deg,var(--surface-soft),#fff);box-shadow:var(--shadow);align-self:center;min-height:86px;display:grid;grid-template-columns:auto 1fr;grid-template-areas:"icon label" "icon value" "icon files";column-gap:14px;align-items:center}.hero-panel .hero-icon{grid-area:icon;width:38px;height:38px;border-radius:var(--radius-full);display:grid;place-items:center;background:rgba(255,56,92,.10);color:var(--rausch);font-size:20px}.hero-panel .hero-label{grid-area:label;color:var(--muted);font-size:13px;font-weight:600;line-height:1.2}.hero-panel b{grid-area:value;display:block;font-size:36px;line-height:1;letter-spacing:-.5px}.hero-panel .hero-files{grid-area:files;color:var(--muted);font-size:12px;line-height:1.25;margin-top:4px}.card{background:#fff;border:1px solid var(--hairline);border-radius:var(--radius-md);padding:24px;margin:16px 0}.card.elevated{box-shadow:var(--shadow)}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:16px;margin:24px 0}.metric{background:#fff;border-radius:var(--radius-md);border:1px solid var(--hairline);padding:18px;min-height:116px;position:relative;overflow:hidden}.metric:before{content:"";position:absolute;inset:0 0 auto;height:4px;background:var(--metric-color,var(--hairline))}.metric span{color:var(--muted);font-size:14px;line-height:1.43}.metric b{font-size:40px;line-height:1.1;letter-spacing:-1px;display:block;margin-top:8px}.p0{--metric-color:var(--rausch)}.p1{--metric-color:var(--rausch-active)}.p2{--metric-color:var(--ink)}.p3{--metric-color:var(--muted)}.summary-list{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:12px;margin:0}.summary-item{display:flex;flex-direction:column;gap:6px;min-width:0;padding:14px 16px;border:1px solid var(--hairline-soft);border-radius:var(--radius-sm);background:var(--surface-soft)}.summary-item .label{color:var(--muted);font-size:13px;font-weight:600;line-height:1.2}.summary-item .value{color:var(--ink);font-size:16px;font-weight:600;line-height:1.35;overflow-wrap:anywhere}.summary-item .value.mono{font-family:ui-monospace,SFMono-Regular,Consolas,monospace;font-size:14px}.summary-item.compact .value{font-size:24px;line-height:1.15}.summary-list p{margin:0;color:var(--body)}.summary-list b{color:var(--ink);font-weight:600}.file-progress{display:flex;align-items:baseline;gap:6px;flex-wrap:wrap}.file-progress strong{font-size:20px;line-height:1.1}.file-progress small{color:var(--muted);font-size:12px;font-weight:600}.clean-state,.empty-state{border:1px solid var(--hairline-soft);border-radius:var(--radius-md);background:linear-gradient(135deg,var(--surface-soft),#fff);color:var(--body)}.clean-state{display:flex;align-items:center;gap:14px;padding:18px 20px;margin:16px 0}.clean-state .icon,.empty-state .icon{width:30px;height:30px;border-radius:var(--radius-full);display:inline-grid;place-items:center;background:#fff;color:var(--rausch);border:1px solid var(--hairline-soft);flex:0 0 auto}.clean-state b{display:block;color:var(--ink);font-weight:700}.clean-state p{margin:2px 0 0;color:var(--muted)}.empty-state{display:flex;align-items:center;gap:12px;margin:16px 24px;padding:18px}.empty-state p{margin:0;color:var(--muted)}.muted{color:var(--muted)}a{color:var(--rausch);text-decoration:none}a:hover{text-decoration:underline}details.card{padding:0;overflow:hidden}summary{cursor:pointer;font-weight:600;font-size:20px;line-height:1.2;list-style:none;padding:22px 24px;display:flex;align-items:center;justify-content:space-between;gap:16px}summary::-webkit-details-marker{display:none}summary:after{content:"展开";font-size:14px;font-weight:500;color:var(--ink);border:1px solid var(--hairline);border-radius:var(--radius-full);padding:6px 12px;background:#fff;flex:0 0 auto}details[open]>summary{border-bottom:1px solid var(--hairline-soft)}details[open]>summary:after{content:"收起"}.issue{margin:16px 24px;padding:20px;border-radius:var(--radius-md);box-shadow:none}.issue h3{word-break:break-word}.issue p{margin:10px 0;color:var(--body)}.issue b{color:var(--ink)}.issue.p0,.issue.p1,.issue.p2,.issue.p3{border-left:0}.issue.p0{background:linear-gradient(90deg,rgba(255,56,92,.08),#fff 34%);border-color:rgba(255,56,92,.28)}.issue.p1{background:linear-gradient(90deg,rgba(224,11,65,.06),#fff 34%);border-color:rgba(224,11,65,.22)}.issue.p2{background:#fff}.issue.p3{background:var(--surface-soft)}.issue-title{display:block;margin-bottom:14px}.issue-line{display:grid;grid-template-columns:24px 1fr;gap:8px;align-items:start;margin:12px 0;color:var(--body)}.issue-line .emoji{width:20px;height:20px;margin-top:1px;border-radius:var(--radius-full);background:#fff;border:1px solid var(--hairline-soft);display:inline-grid;place-items:center;font-size:11px;line-height:1}.issue-line b{display:block;margin-bottom:3px;color:var(--ink);line-height:1.25}.issue-line span:last-child{min-width:0}pre{background:var(--surface-soft);border:1px solid var(--hairline-soft);border-radius:var(--radius-sm);padding:16px;overflow:auto;color:var(--ink);font-size:13px;line-height:1.5}button{border:0;border-radius:var(--radius-full);background:var(--rausch);color:#fff;padding:10px 18px;min-height:40px;cursor:pointer;font-weight:500;font-size:14px}button:active{background:var(--rausch-active)}code{font-family:ui-monospace,SFMono-Regular,Consolas,monospace}.table-wrap{overflow:auto;border:1px solid var(--hairline);border-radius:var(--radius-md)}table{width:100%;border-collapse:collapse;font-size:14px}th,td{padding:12px 14px;border-bottom:1px solid var(--hairline-soft);text-align:left;vertical-align:top}th{font-weight:600;color:var(--ink);background:var(--surface-soft)}tr:last-child td{border-bottom:0}td:first-child{font-family:ui-monospace,SFMono-Regular,Consolas,monospace;color:var(--body)}@media(max-width:744px){.wrap{padding:32px 20px 48px}.hero{grid-template-columns:1fr;gap:20px}.hero-panel{display:none}.grid{grid-template-columns:repeat(2,minmax(0,1fr))}.card{padding:18px}.summary-list{grid-template-columns:1fr}.clean-state{align-items:flex-start}summary{padding:18px}.issue{margin:14px 18px;padding:16px}.empty-state{margin:14px 18px;padding:16px}}
+</style>
+<script>
+function copyCode(id){const el=document.getElementById(id);navigator.clipboard.writeText(el.innerText).then(()=>{});}
+</script>
+</head><body><div class='wrap'>
+<header class='hero'>
+<div><div class='brand'><span class='brand-orb'>⌕</span><span>Code Review</span></div><h1>Code Review Report</h1></div>
+<aside class='hero-panel'><span class='hero-icon'>✓</span><span class='hero-label'>Issues</span><b>4</b><span class='hero-files'>Files 5/5 (reviewed:5 skipped:0)</span></aside>
+</header>
+<div class='grid'>
+<div class='metric p0'><span>P0 — Must Fix</span><b>2</b></div>
+<div class='metric p1'><span>P1 — Should Fix</span><b>1</b></div>
+<div class='metric p2'><span>P2 — Nice to Fix</span><b>0</b></div>
+<div class='metric p3'><span>P3 — Suggestion</span><b>1</b></div>
+</div>
+<div class='card elevated'><div class='summary-list'>
+<div class='summary-item'><span class='label'>Repository</span><span class='value mono'>/Coze/Drive/屁屁/所有对话/主对话/米米宇宙代码审查/repo-main</span></div>
+<div class='summary-item'><span class='label'>Mode</span><span class='value'>range</span></div>
+<div class='summary-item'><span class='label'>Files Processed</span><span class='value'><span class='file-progress'><strong>5/5</strong><small>reviewed:5</small><small>skipped:0</small></span></span></div>
+<div class='summary-item compact'><span class='label'>Issues</span><span class='value'>4</span></div>
+</div>
+</div>
+<details open class='card'><summary>P0 — Must Fix (2)</summary>
+<div class='issue p0 card'>
+<h3 class='issue-title'>[接口与集成设计 &gt; 参数/返回值/契约与幂等性] src/app/api/admin/review-queue/route.ts:68-68</h3>
+<div class='issue-line'><span class='emoji'>❗</span><span><b>问题</b>本接口 list_pending 查询使用的列名 nickname / weibo_nickname / weibo_screenshot_url / weibo_level 与 supabase-schema-v2.sql 中 users 表的真实列名（weibo_name，无 nickname / weibo_nickname 等列）不一致，只有 weibo_link 在 schema 中存在。若线上库严格按 schema v2 建立，该 select 会因「列不存在」直接报错（usersError 分支返回 500），审核队列页无法加载待审用户。即便线上库靠 ALTER 补齐了旧列、当前未报错，代码列名与 schema 文件长期不一致会持续误导新成员。</span></div>
+<div class='issue-line'><span class='emoji'>🛠️</span><span><b>修复建议</b>核对线上 users 表真实列名（Supabase 表编辑器），并把查询列名统一到 schema 定义；若线上确有 nickname/weibo_nickname 旧列，应在 schema 文件中补齐或做迁移统一命名，消除代码与 schema 的漂移。</span></div>
+<div class='issue-line'><span class='emoji'>🔎</span><span><b>证据</b>diff &#x27;+&#x27; line 68 select 新增 weibo_link，但同行仍 select nickname, weibo_nickname, weibo_screenshot_url；schema v2 users 表仅有 weibo_name、weibo_link，无 nickname/weibo_nickname/weibo_screenshot_url/weibo_level。</span></div>
+</div>
+<div class='issue p0 card'>
+<h3 class='issue-title'>[功能正确性与健壮性 &gt; 业务规则与领域逻辑及异常处理] src/app/api/auth/route.ts:590-590</h3>
+<div class='issue-line'><span class='emoji'>❗</span><span><b>问题</b>本 commit 让注册用户填写「微博主页链接」（前端已必填并随注册请求体发送 weiboLink，登录/校验/list_users 也已返回 weiboLink），但 register 分支根本没有落地该字段：① 请求体解构（269-295 行）没有 weiboLink；② 注册必填校验（326 行）只校验 username/password/invitationCode/weiboName，不校验 weiboLink；③ 注册 INSERT（406-415 行）没有 weibo_link 列。结果：用户在注册页填了链接、后端静默丢弃，数据库永远为 NULL，审核队列和登录返回的 weiboLink 恒为空字符串。功能链路在后端断开，属于「前端做了、后端没接」的半拉子功能。</span></div>
+<div class='issue-line'><span class='emoji'>🛠️</span><span><b>修复建议</b>在 register 分支补齐三处：1) body 解构加入 weiboLink；2) 必填校验加入 weiboLink；3) users 表 INSERT 加入 weibo_link 字段。示例：</span></div>
+<div class='issue-line'><span class='emoji'>🔎</span><span><b>证据</b>diff &#x27;+&#x27; line 590 新增登录返回 weiboLink: user.weibo_link || &quot;&quot;；但 register 的 INSERT（source 406-415 行）只有 username/password/display_name/weibo_name/role/status/invite_code_used/referrer_id，无 weibo_link；body 解构（269-295 行）无 weiboLink；前端 page.tsx diff &#x27;+&#x27; 行已发送 weiboLink 且必填校验。</span></div>
+</div>
+</details>
+<details open class='card'><summary>P1 — Should Fix (1)</summary>
+<div class='issue p1 card'>
+<h3 class='issue-title'>[安全性 &gt; 注入/解析与反序列化漏洞] src/components/admin/review-queue.tsx:368-374</h3>
+<div class='issue-line'><span class='emoji'>❗</span><span><b>问题</b>微博链接来自待审核用户提交的内容（user-controlled），直接作为 &lt;a href={u.weibo_link}&gt; 渲染，后端未做任何 URL 协议校验。若用户把链接填成 javascript:xxx 或 data:text/html 脚本，管理员点击链接时脚本会在管理后台页面上下文执行（存储型 XSS），可窃取管理员 token、越权操作审核/封禁。注册后端也没有对 weiboLink 做格式/协议校验，等于入口不设防。</span></div>
+<div class='issue-line'><span class='emoji'>🛠️</span><span><b>修复建议</b>渲染前校验协议白名单，只允许 http/https；非白名单不渲染为可点击链接。示例：</span></div>
+<div class='issue-line'><span class='emoji'>🔎</span><span><b>证据</b>diff &#x27;+&#x27; lines 364-376：{u.weibo_link &amp;&amp; (&lt;a href={u.weibo_link} target=&quot;_blank&quot; ...&gt;)}，weibo_link 为用户注册提交、后端原样存储返回，无协议校验。</span></div>
+<button onclick="copyCode('code-3')">复制修复代码</button>
+<pre id='code-3'><code>                          &lt;a
+                            href={/^https?:\/\//i.test(u.weibo_link) ? u.weibo_link : undefined}
+                            target=&quot;_blank&quot;
+                            rel=&quot;noopener noreferrer&quot;
+                            className=&quot;max-w-[200px] truncate text-indigo-300 underline hover:text-indigo-200&quot;
+                            title={u.weibo_link}
+                          &gt;
+                            {u.weibo_link}
+                          &lt;/a&gt;</code></pre>
+</div>
+</details>
+<details class='card'><summary>P2 — Nice to Fix (0)</summary>
+<div class='empty-state'><span class='icon'>—</span><p>该优先级下没有需要处理的问题。</p></div>
+</details>
+<details class='card'><summary>P3 — Suggestion (1)</summary>
+<div class='issue p3 card'>
+<h3 class='issue-title'>[功能正确性与健壮性 &gt; 业务规则与领域逻辑及异常处理] src/components/admin/review-queue.tsx:377-384</h3>
+<div class='issue-line'><span class='emoji'>❗</span><span><b>问题</b>「复制」按钮点击后 navigator.clipboard.writeText 的成功/失败都没有任何用户反馈（成功不提示、catch 里只有空注释 // fallback）。管理员点了复制不知道是否成功，且 clipboard API 在非 HTTPS 或无权限环境会 reject，静默失败体验差。</span></div>
+<div class='issue-line'><span class='emoji'>🛠️</span><span><b>修复建议</b>复制成功后给一个轻量提示（如按钮文字临时变「已复制」或 toast），catch 里降级为提示手动复制。</span></div>
+<div class='issue-line'><span class='emoji'>🔎</span><span><b>证据</b>diff &#x27;+&#x27; lines 377-384：onClick 内 try { await navigator.clipboard.writeText(u.weibo_link || &quot;&quot;); } catch { // fallback }，无任何 UI 反馈。</span></div>
+</div>
+</details>
+<div class='card elevated'><h2>File Summary</h2><div class='table-wrap'><table><thead><tr><th>File</th><th>Status</th><th>Issues</th><th>P0</th><th>P1</th><th>P2</th><th>P3</th></tr></thead><tbody>
+<tr><td>src/app/api/admin/review-queue/route.ts</td><td>completed</td><td>1</td><td>1</td><td>0</td><td>0</td><td>0</td></tr>
+<tr><td>src/app/api/admin/tree/route.ts</td><td>completed</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td></tr>
+<tr><td>src/app/api/auth/route.ts</td><td>completed</td><td>1</td><td>1</td><td>0</td><td>0</td><td>0</td></tr>
+<tr><td>src/app/phone/page.tsx</td><td>completed</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td></tr>
+<tr><td>src/components/admin/review-queue.tsx</td><td>completed</td><td>2</td><td>0</td><td>1</td><td>0</td><td>1</td></tr>
+</tbody></table></div></div>
+</div></body></html>

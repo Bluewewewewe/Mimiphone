@@ -8748,11 +8748,6 @@ export default function PhonePage() {
                                 <span className="me-menu-label">新版管理后台</span>
                                 <span className="me-menu-arrow">›</span>
                             </div>
-                            <div className="me-menu-item" onClick={() => setCurrentApp("app-admin")}>
-                                <span className="me-menu-icon">📲</span>
-                                <span className="me-menu-label">应用管理</span>
-                                <span className="me-menu-arrow">›</span>
-                            </div>
                         </>
                     )}
                     <div className="me-menu-item" onClick={() => setMeSubPage("wallpaper")}>
@@ -10665,8 +10660,6 @@ export default function PhonePage() {
             return <AdminApp adminRole={adminRole} onClose={() => setCurrentApp(null)} />;
         case "admin-review":
             return <AdminReviewApp loginUsername={loginUsername} onClose={() => setCurrentApp(null)} />;
-        case "app-admin":
-            return <AppAdminApp loginUsername={loginUsername} onClose={() => setCurrentApp(null)} />;
         case "app-store":
             return renderAppStore();
         default:

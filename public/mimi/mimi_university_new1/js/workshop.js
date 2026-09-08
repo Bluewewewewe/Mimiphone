@@ -1,6 +1,4 @@
 const WS_STORAGE_KEY = "mimi_workshop_v1";
-const WS_WANT_FLAGS = "mimi_workshop_want_flags_v1";
-const MAIN_STORAGE_KEY = "mimi_university_data_v2";
 
 let wsData = null;
 let wsUser = null;
@@ -13,6 +11,8 @@ let wsFilterGroupId = "all";
 let wsFilterMajor = "";
 let wsFilterMinor = "";
 let wsCatExpanded = {};
+let wsWantedSet = new Set();
+let wsBootstrapping = null; // 进行中的数据加载 Promise，防重复拉取
 
 function closeM(id) {
     const el = document.getElementById(id);
@@ -198,7 +198,10 @@ function wsCarouselWantSlots() {
     return WS_CAROUSEL_MAX - (wsData.carouselConfig.customCount || 0);
 }
 
-function wsLoad() {
+/* ========== 数据加载（后端 API 为准，localStorage 仅离线缓存兜底） ========== */
+
+/** 同步读取本地缓存，用于首屏立即渲染（数据可能过期，随后被 API 数据覆盖） */
+function wsLoadCache() {
     try {
         const raw = localStorage.getItem(WS_STORAGE_KEY);
         wsData = raw ? JSON.parse(raw) : wsDefaultData();
@@ -209,89 +212,108 @@ function wsLoad() {
     if (!wsData.disclaimer) wsData.disclaimer = wsDefaultData().disclaimer;
     wsEnsureCarouselConfig();
     wsEnsureProductCodes();
-    // 异步从 API 拉取最新商品数据
-    wsSyncProductsFromAPI();
 }
 
-async function wsSyncProductsFromAPI() {
-    try {
-        const data = await apiGetProducts();
-        if (data.products && data.products.length > 0) {
-            // 用 API 数据替换本地商品列表
-            wsData.products = data.products.map(p => ({
-                id: p.id,
-                name: p.name,
-                image: p.image_url || "",
-                desc: p.description || "",
-                price: p.price || "",
-                groupId: p.group_id || "",
-                category: p.category || "其他",
-                subCategory: p.sub_category || "",
-                hasQuestion: p.has_question || false,
-                question: p.question || "",
-                answer: p.answer || "",
-                contactImage: p.contact_image_url || "",
-                status: p.status || "online",
-                wantCount: p.want_count || 0,
-                code: p.code || "",
-                leaderUid: p.leader_uid || "",
-            }));
-            wsSave();
-            wsRenderProductGrid();
-            wsRenderCarousel();
-        }
-    } catch (err) {
-        console.warn("从API同步商品数据失败，使用本地数据:", err);
-    }
-}
+/** 进入页面：从后端拉取全量数据 */
+async function wsBootstrap() {
+    const data = await apiWsBootstrap();
+    wsData = wsData || wsDefaultData();
+    // 免责声明等本地默认值保留
+    const defaults = wsDefaultData();
+    wsData.disclaimer = wsData.disclaimer || defaults.disclaimer;
+    wsData.applyDocUrl = defaults.applyDocUrl;
+    wsData.applyEmail = defaults.applyEmail;
 
-function wsSave() {
-    wsEnsureCarouselConfig();
-    localStorage.setItem(WS_STORAGE_KEY, JSON.stringify(wsData));
-}
-
-function wsDefaultUserDB() {
-    return {
-        admin: { uid: "UID001", pass: "admin123", type: "admin", email: "a@m.com" },
-        super: { uid: "UID000", pass: "super123", type: "super", email: "s@m.com" }
+    wsData.products = data.products || [];
+    wsData.groups = data.groups || [];
+    wsData.leaders = data.leaders || [];
+    wsData.applications = data.applications || [];
+    wsData.categories = (data.categories && data.categories.length) ? data.categories : defaults.categories;
+    wsData.carouselConfig = {
+        customCount: data.carousel?.customCount ?? 0,
+        customIds: data.carousel?.customIds || [],
+        banners: data.carousel?.banners || {}
     };
+    wsData.carouselFeatured = [...wsData.carouselConfig.customIds];
+
+    // 当前用户身份（后端按 token 解析，含 userId）
+    const u = data.user || {};
+    wsUser = wsUser || { name: u.name || "", type: u.isAdmin ? "admin" : "user", uid: u.uid };
+    wsUser.uid = u.uid || wsUser.uid;
+    wsUser.name = u.name || wsUser.name;
+    wsUser.type = u.isAdmin ? "admin" : "user";
+    wsIsAdmin = !!u.isAdmin;
+    wsUser.isLeader = !!u.isLeader;
+
+    // 我点过「想要」的商品
+    wsWantedSet = new Set(data.wantedIds || []);
+
+    wsEnsureCarouselConfig();
+    wsEnsureProductCodes();
+    wsSaveCache();
+    return data;
 }
 
-function wsLoadUserDB() {
+/** 写操作后刷新本地状态并重绘 */
+async function wsRefresh() {
     try {
-        const raw = localStorage.getItem(MAIN_STORAGE_KEY);
-        if (!raw) return wsDefaultUserDB();
-        const db = JSON.parse(raw).userDB;
-        return db && Object.keys(db).length ? db : wsDefaultUserDB();
-    } catch {
-        return wsDefaultUserDB();
+        await wsBootstrap();
+    } catch (err) {
+        console.warn("刷新作坊数据失败:", err);
+        throw err;
+    }
+    wsUpdateToolbar();
+    wsRenderAll();
+    if (typeof wsRenderAdmin === "function" && document.getElementById("modalWsAdmin")?.style.display === "flex") {
+        wsRenderAdmin();
     }
 }
 
-function wsGetSession() {
-    try {
-        const raw = sessionStorage.getItem("mimi_current_user");
-        if (!raw) return null;
-        return JSON.parse(raw);
-    } catch {
-        return null;
-    }
+function wsLoad() {
+    // 兼容旧调用：先读缓存立刻渲染，再异步拉取 API
+    wsLoadCache();
+    wsBootstrap()
+        .then(() => {
+            wsUpdateToolbar();
+            wsRenderAll();
+        })
+        .catch((err) => {
+            console.warn("作坊数据加载失败，使用本地缓存:", err);
+        });
 }
 
-function wsSetSession(user) {
-    sessionStorage.setItem("mimi_current_user", JSON.stringify(user));
+/** localStorage 仅作离线缓存；核心数据以后端为准 */
+function wsSave() {
+    wsSaveCache();
+}
+
+function wsSaveCache() {
+    try {
+        wsEnsureCarouselConfig();
+        localStorage.setItem(WS_STORAGE_KEY, JSON.stringify(wsData));
+    } catch (e) {
+        // 存储失败（如 base64 图片过大）不影响主流程
+        console.warn("本地缓存写入失败:", e);
+    }
 }
 
 function wsIsLeader() {
     if (!wsUser) return false;
-    const l = wsData.leaders.find((x) => x.user === wsUser.name && x.active !== false);
+    if (wsUser.isLeader) return true;
+    const l = wsLeaderRecord();
     if (!l) return false;
     if (l.expiresAt && Date.now() > l.expiresAt) return false;
     return true;
 }
 
 function wsLeaderRecord() {
-    return wsData.leaders.find((x) => x.user === wsUser?.name && x.active !== false);
+    if (!wsUser) return null;
+    // 优先按用户 id 匹配（后端 leaders 数据带 uid）
+    return (
+        (wsUser.uid && wsData.leaders.find((x) => x.uid === wsUser.uid && x.active !== false)) ||
+        wsData.leaders.find((x) => x.user === wsUser.name && x.active !== false) ||
+        null
+    );
 }
 
 function wsLeaderGroups() {
@@ -391,50 +413,59 @@ function wsReadFileAsDataURL(input, cb) {
         });
 }
 
-/* ========== 登录 ========== */
-function wsHandleLogin() {
-    const u = document.getElementById("wsLUser").value.trim();
-    const p = document.getElementById("wsLPass").value;
-    const r = document.getElementById("wsLRole").value;
-    const userDB = wsLoadUserDB();
-    if (!userDB[u] || userDB[u].type !== r || userDB[u].pass !== p) {
-        alert("账号或密码错误（请使用米米宇宙同一账号）");
+/* ========== 登录态（iframe URL 注入 token，无独立登录页） ========== */
+
+/** 从 URL query 解析主站注入的登录态 */
+function wsSyncFromMain() {
+    let token = "", username = "", role = "user";
+    try {
+        const p = new URLSearchParams(window.location.search);
+        token = p.get("token") || "";
+        username = p.get("username") || "";
+        role = p.get("role") || "user";
+    } catch (e) { /* ignore */ }
+
+    // 兜底：课程表页同域脚本里的 currentUser
+    if (!token && typeof currentUser !== "undefined" && currentUser) {
+        username = currentUser.name;
+        role = currentUser.type === "admin" || currentUser.type === "super" ? "admin" : "user";
+    }
+
+    if (token && typeof apiSetToken === "function") apiSetToken(token);
+
+    if (username) {
+        wsUser = wsUser || {};
+        wsUser.name = username;
+        wsUser.type = (role === "admin" || role === "super" || role === "super_admin") ? "admin" : "user";
+        wsIsAdmin = wsUser.type === "admin";
+        wsUser.isAdmin = wsIsAdmin;
+    }
+}
+
+/** 是否有可用登录态（URL 带 token，或主站 currentUser 存在） */
+function wsHasAuth() {
+    try {
+        const p = new URLSearchParams(window.location.search);
+        if (p.get("token")) return true;
+    } catch (e) { /* ignore */ }
+    return typeof currentUser !== "undefined" && !!currentUser;
+}
+
+/** 独立访问（未从米米宇宙进入）提示 */
+function wsShowEnterHint() {
+    const page = document.getElementById("pageW");
+    if (!page) {
+        alert("请从米米宇宙进入迷你小作坊");
         return;
     }
-    wsUser = { name: u, type: r, uid: userDB[u].uid };
-    wsIsAdmin = r === "admin" || r === "super";
-    wsSetSession(wsUser);
-    document.getElementById("wsAuthPage").style.display = "none";
-    document.getElementById("wsMainPage").classList.add("active");
-    wsAfterLogin();
+    page.innerHTML = `<div style="max-width:320px;margin:80px auto;text-align:center;color:#666;line-height:1.8;padding:24px;">
+        <div style="font-size:40px;margin-bottom:12px;">🏠</div>
+        <h3 style="color:#333;">请从米米宇宙进入</h3>
+        <p style="font-size:13px;">迷你小作坊已接入米米宇宙账号体系，<br>请在米米宇宙 App 中打开本页面。</p>
+    </div>`;
 }
 
-function wsAfterLogin() {
-    const disp = document.getElementById("wsUserDisp");
-    if (disp) disp.textContent = `${wsUser.name} (${wsUser.uid})`;
-    wsUpdateToolbar();
-    wsShowDisclaimer(true);
-}
-
-function wsTryAutoLogin() {
-    wsUser = wsGetSession();
-    if (!wsUser) return;
-    const userDB = wsLoadUserDB();
-    if (!userDB[wsUser.name]) {
-        sessionStorage.removeItem("mimi_current_user");
-        wsUser = null;
-        return;
-    }
-    wsIsAdmin = wsUser.type === "admin" || wsUser.type === "super";
-    const authPage = document.getElementById("wsAuthPage");
-    const mainPage = document.getElementById("wsMainPage");
-    if (!authPage && !mainPage) return;
-    if (authPage) authPage.style.display = "none";
-    if (mainPage) mainPage.classList.add("active");
-    wsAfterLogin();
-}
-
-/** 管理员：设置微博Cookie */
+/** 管理员：设置微博Cookie（保留 localStorage） */
 function wsAdminSetCookie() {
     const current = localStorage.getItem("mimi_weibo_sub_cookie") || "";
     const val = prompt("请粘贴微博 SUB Cookie 值（_2A25开头）：", current);
@@ -448,35 +479,42 @@ function wsAdminSetCookie() {
     }
 }
 
-/** 内嵌主站：与课程表等平行 */
-function wsSyncFromMain() {
-    if (typeof currentUser !== "undefined" && currentUser) {
-        wsUser = { name: currentUser.name, type: currentUser.type, uid: currentUser.uid };
-        wsIsAdmin =
-            (typeof isAdmin !== "undefined" && isAdmin) ||
-            (typeof isSuper !== "undefined" && isSuper) ||
-            currentUser.type === "admin" ||
-            currentUser.type === "super";
-    }
-}
-
 function wsUpdateToolbar() {
     wsSyncFromMain();
     const listBtn = document.getElementById("wsListBtn");
     const adminBtn = document.getElementById("wsAdminBtn");
+    const cookieBtn = document.getElementById("wsCookieBtn");
     if (listBtn) listBtn.style.display = wsIsLeader() ? "inline-block" : "none";
     if (adminBtn) adminBtn.style.display = wsIsAdmin ? "inline-block" : "none";
+    if (cookieBtn) cookieBtn.style.display = wsIsAdmin ? "inline-block" : "none";
 }
 
+/** 进入小作坊页面（core.js 在 workshopOnly 模式 / 切到 W 页时调用） */
 function wsEnterPage() {
-    if (typeof currentUser === "undefined" || !currentUser) {
-        alert("请先登录米米宇宙");
-        if (typeof changePage === "function") changePage("S");
+    wsSyncFromMain();
+    if (!wsHasAuth()) {
+        wsShowEnterHint();
         return;
     }
-    wsLoad();
-    wsSyncFromMain();
+    // 先用缓存首屏渲染
+    wsLoadCache();
     wsUpdateToolbar();
+    wsRenderAll();
+    // 再拉后端数据（同一时刻只允许一个在途请求）
+    if (!wsBootstrapping) {
+        wsBootstrapping = wsBootstrap()
+            .then(() => {
+                wsUpdateToolbar();
+                wsRenderAll();
+            })
+            .catch((err) => {
+                console.warn("作坊数据加载失败:", err);
+                if (/登录|过期|401/.test(String(err && err.message))) {
+                    alert("登录已过期，请重新从米米宇宙进入");
+                }
+            })
+            .finally(() => { wsBootstrapping = null; });
+    }
     wsShowDisclaimer(true);
 }
 
@@ -498,21 +536,33 @@ function wsShowDisclaimer(forceShow) {
         return;
     }
     body.innerHTML = wsData.disclaimer;
+    body.scrollTop = 0;
+    // 多种事件兜底：iframe 内 onscroll 在部分机型（尤其触摸滚动）可能不触发，
+    // 同时监听 wheel/touchmove/resize，图片加载后高度变化也重新检测
     body.onscroll = wsCheckDisclaimerScroll;
+    body.onwheel = wsCheckDisclaimerScroll;
+    body.ontouchmove = () => setTimeout(wsCheckDisclaimerScroll, 60);
+    window.addEventListener("resize", wsCheckDisclaimerScroll);
+    body.querySelectorAll("img").forEach((img) => { img.onload = wsCheckDisclaimerScroll; });
     btn.disabled = true;
     btn.classList.remove("btn-ui-primary");
     btn.classList.add("btn-ui-secondary");
     document.getElementById("wsDisclaimerHint").textContent = "请滚动至底部阅读全文";
     document.getElementById("wsDisclaimerHint").classList.remove("ready");
     document.getElementById("modalWsDisclaimer").style.display = "flex";
+    // 多次延迟检测：字体/布局完成前后各检一次；内容不足一屏（无需滚动）直接放行
     setTimeout(wsCheckDisclaimerScroll, 100);
+    setTimeout(wsCheckDisclaimerScroll, 400);
 }
 
 function wsCheckDisclaimerScroll() {
     const body = document.getElementById("wsDisclaimerBody");
     const hint = document.getElementById("wsDisclaimerHint");
     const btn = document.getElementById("wsDisclaimerOk");
-    const atBottom = body.scrollTop + body.clientHeight >= body.scrollHeight - 8;
+    if (!body || !btn || !hint) return;
+    // 内容不足一屏（没有滚动条）→ 视为已读完
+    const noScroll = body.scrollHeight <= body.clientHeight + 8;
+    const atBottom = noScroll || body.scrollTop + body.clientHeight >= body.scrollHeight - 8;
     if (atBottom) {
         hint.textContent = "已阅读完毕，可点击确定进入";
         hint.classList.add("ready");
@@ -524,6 +574,7 @@ function wsCheckDisclaimerScroll() {
 
 function wsCloseDisclaimer() {
     sessionStorage.setItem("ws_disclaimer_ok", "1");
+    window.removeEventListener("resize", wsCheckDisclaimerScroll);
     closeM("modalWsDisclaimer");
     wsRenderAll();
 }
@@ -701,8 +752,7 @@ function wsOpenProduct(id) {
     document.getElementById("wsDetailDesc").textContent = p.desc || "暂无介绍";
     const codeHint = wsCanSeeProductCode() && p.code ? ` · 编号 ${p.code}` : "";
     document.getElementById("wsDetailGroup").textContent = (g ? `所属团：${g.name}` : "") + codeHint;
-    const wantFlags = JSON.parse(localStorage.getItem(WS_WANT_FLAGS) || "{}");
-    const wanted = wsUser && wantFlags[`${wsUser.name}_${p.id}`];
+    const wanted = wsWantedSet.has(p.id);
     document.getElementById("wsDetailWantBtn").textContent = `${wanted ? "💖" : "🤍"} 想要 (${wsProductWantCount(p)})`;
 
     const qaBlock = document.getElementById("wsDetailQaBlock");
@@ -752,26 +802,34 @@ function wsCheckDetailAnswer() {
     wsShowContact(p);
 }
 
-function wsToggleWant() {
+async function wsToggleWant() {
     const p = wsData.products.find((x) => x.id === wsCurrentProductId);
     if (!p || !wsUser) return alert("请先登录");
-    const flags = JSON.parse(localStorage.getItem(WS_WANT_FLAGS) || "{}");
-    const key = `${wsUser.name}_${p.id}`;
-    if (flags[key]) {
-        p.wantCount = Math.max(0, (p.wantCount || 1) - 1);
-        delete flags[key];
-    } else {
-        p.wantCount = (p.wantCount || 0) + 1;
-        flags[key] = true;
+    const btn = document.getElementById("wsDetailWantBtn");
+    if (btn) { btn.disabled = true; }
+    try {
+        const res = await apiToggleWant(p.id);
+        p.wantCount = res.wantCount;
+        if (res.wanted) wsWantedSet.add(p.id);
+        else wsWantedSet.delete(p.id);
+        const icon = res.wanted ? "💖" : "🤍";
+        if (btn) btn.textContent = `${icon} 想要 (${wsProductWantCount(p)})`;
+        wsSaveCache();
+        wsRenderCarousel();
+        wsRenderProductGrid();
+    } catch (err) {
+        alert(err.message || "操作失败，请重试");
+    } finally {
+        if (btn) btn.disabled = false;
     }
-    localStorage.setItem(WS_WANT_FLAGS, JSON.stringify(flags));
-    wsSave();
-    document.getElementById("wsDetailWantBtn").textContent = `💖 想要 (${wsProductWantCount(p)})`;
-    wsRenderCarousel();
-    wsRenderProductGrid();
 }
 
 /* ========== 团长申请 ========== */
+function wsAppIsMine(a) {
+    if (!wsUser) return false;
+    return (wsUser.uid && a.uid === wsUser.uid) || a.user === wsUser.name;
+}
+
 function wsRenderLeaderApplyStatus() {
     const box = document.getElementById("wsLeaderApplyStatus");
     if (!box) return;
@@ -780,8 +838,9 @@ function wsRenderLeaderApplyStatus() {
         box.innerHTML = `<div class="ws-apply-status ws-apply-status--ok">✅ 您已是团长，可使用「我要上架」发布商品。商品编号仅您与管理员可见。</div>`;
         return;
     }
-    const pending = (wsData.applications || []).find((a) => a.user === wsUser?.name && a.status === "pending");
-    const approved = (wsData.applications || []).find((a) => a.user === wsUser?.name && a.status === "approved");
+    const mine = (wsData.applications || []).filter(wsAppIsMine);
+    const pending = mine.find((a) => a.status === "pending");
+    const approved = mine.find((a) => a.status === "approved");
     if (pending) {
         box.innerHTML = `<div class="ws-apply-status ws-apply-status--pending">⏳ 您已提交团长申请（${wsFormatDate(pending.ts)}），请等待管理员在「管理后台」审核。</div>`;
         return;
@@ -794,11 +853,7 @@ function wsRenderLeaderApplyStatus() {
 }
 
 function wsOpenLeaderApply() {
-    wsLoad();
     wsSyncFromMain();
-    if (!wsUser && typeof currentUser !== "undefined" && currentUser) {
-        wsUser = { name: currentUser.name, type: currentUser.type, uid: currentUser.uid };
-    }
     if (!wsUser) return alert("请先登录");
     const doc = document.getElementById("wsApplyDoc");
     const email = document.getElementById("wsApplyEmail");
@@ -813,20 +868,19 @@ function wsOpenLeaderApply() {
     modal.style.display = "flex";
 }
 
-function wsSubmitLeaderApply() {
-    const note = document.getElementById("wsApplyNote").value.trim();
+async function wsSubmitLeaderApply() {
+    const noteEl = document.getElementById("wsApplyNote");
+    const note = noteEl.value.trim();
     if (!note) return alert("请填写申请说明（含拟开团名等）");
-    wsData.applications.push({
-        id: "app_" + Date.now(),
-        user: wsUser.name,
-        note,
-        ts: Date.now(),
-        status: "pending"
-    });
-    wsSave();
-    alert("申请已提交，请等待管理员审核");
-    wsRenderLeaderApplyStatus();
-    closeM("modalWsLeaderApply");
+    try {
+        await apiApplyLeader({ note });
+        alert("申请已提交，请等待管理员审核");
+        closeM("modalWsLeaderApply");
+        await wsRefresh();
+        wsRenderLeaderApplyStatus();
+    } catch (err) {
+        alert(err.message || "提交失败，请重试");
+    }
 }
 
 /* ========== 上架流程 ========== */
@@ -928,7 +982,7 @@ function wsListPrevStep() {
     document.getElementById("wsListStep1").classList.add("active");
 }
 
-function wsSubmitList() {
+async function wsSubmitList() {
     const errs = [];
     const hasQa = document.getElementById("wsListHasQa").checked;
     if (!wsListDraft.contactImage) errs.push("联系方式图片");
@@ -943,12 +997,7 @@ function wsSubmitList() {
     }
 
     const gid = document.getElementById("wsListGroup").value;
-    const g = wsData.groups.find((x) => x.id === gid);
-    const codeInfo = wsAllocateProductCode();
-    const p = {
-        id: "p_" + Date.now(),
-        codeNum: codeInfo.codeNum,
-        code: codeInfo.code,
+    const payload = {
         groupId: gid,
         name: document.getElementById("wsListName").value.trim(),
         desc: document.getElementById("wsListDesc").value.trim(),
@@ -958,35 +1007,38 @@ function wsSubmitList() {
         contactImage: wsListDraft.contactImage,
         hasQuestion: hasQa,
         question: hasQa ? document.getElementById("wsListQuestion").value.trim() : "",
-        answer: hasQa ? document.getElementById("wsListAnswer").value.trim() : "",
-        wantCount: 0,
-        // 团长提交需要审核，管理员直接上架
-        status: wsIsAdmin ? "active" : "pending",
-        listedUntil: g?.endAt || null,
-        leaderUser: wsUser.name,
-        createdAt: Date.now()
+        answer: hasQa ? document.getElementById("wsListAnswer").value.trim()
     };
-    wsData.products.push(p);
-    wsSave();
-    if (wsIsAdmin) {
-        alert(`上架成功！\n商品编号：${p.code}`);
-    } else {
-        alert(`提交成功！\n商品编号：${p.code}\n\n制品已提交审核，管理员审核通过后将自动上架。`);
+
+    try {
+        const res = await apiCreateProduct(payload);
+        const code = res?.product?.code || "";
+        if (wsIsAdmin) {
+            alert(`上架成功！\n商品编号：${code}`);
+        } else {
+            alert(`提交成功！\n商品编号：${code}\n\n制品已提交审核，管理员审核通过后将自动上架。`);
+        }
+        closeM("modalWsList");
+        await wsRefresh();
+    } catch (err) {
+        alert(err.message || "提交失败，请重试");
     }
-    closeM("modalWsList");
-    wsRenderAll();
 }
 
 /* ========== 管理后台 ========== */
-function wsOpenAdmin() {
-    wsLoad();
+async function wsOpenAdmin() {
     wsSyncFromMain();
     wsUpdateToolbar();
     if (!wsIsAdmin) return alert("仅管理员可进入管理后台");
-    wsRenderAdmin();
     const modal = document.getElementById("modalWsAdmin");
     if (!modal) return;
     modal.style.display = "flex";
+    try {
+        await wsRefresh();
+    } catch (err) {
+        console.warn("管理后台数据加载失败:", err);
+    }
+    wsRenderAdmin();
 }
 
 function wsRenderAdmin() {
@@ -999,7 +1051,7 @@ function wsRenderAdmin() {
     const leaders = document.getElementById("wsAdminLeaders");
     leaders.innerHTML = wsData.leaders.map((l) =>
         `<div class="ws-list-row"><span>${wsEscape(l.user)} · 到期 ${wsFormatDate(l.expiresAt)} · 团 ${(l.groupIds||[]).length}/2</span>
-        <button class="btn-ui-tag-del" onclick="wsRevokeLeader('${l.user}')">取消资格</button></div>`
+        <button class="btn-ui-tag-del" onclick="wsRevokeLeader('${l.uid || l.user}')">取消资格</button></div>`
     ).join("") || "<div style='color:#999;'>暂无团长</div>";
 
     const groups = document.getElementById("wsAdminGroups");
@@ -1048,9 +1100,9 @@ function wsRenderAdmin() {
     ).join("") || "<div style='color:#999;'>暂无制品</div>";
 
     const cats = document.getElementById("wsAdminCats");
-    cats.innerHTML = wsData.categories.map((c, i) =>
+    cats.innerHTML = wsData.categories.map((c) =>
         `<div class="ws-list-row"><span>${wsEscape(c.name)}：${(c.subs||[]).join("、")}</span>
-        <button class="btn-ui-tag-del" onclick="wsRemoveCategory(${i})">删除</button></div>`
+        <button class="btn-ui-tag-del" onclick="wsRemoveCategory('${c.id}')">删除</button></div>`
     ).join("") || "";
 
     wsRenderAdminCarousel();
@@ -1062,9 +1114,25 @@ function wsSetCarouselCustomCount(count) {
     const cfg = wsData.carouselConfig;
     cfg.customCount = Math.max(0, Math.min(WS_CAROUSEL_MAX, count));
     cfg.customIds = (cfg.customIds || []).slice(0, cfg.customCount);
-    wsSave();
     wsRenderAdminCarousel();
     wsRenderCarousel();
+    wsPersistCarousel();
+}
+
+/** 把本地轮播配置持久化到后端（失败回滚提示） */
+async function wsPersistCarousel() {
+    try {
+        wsEnsureCarouselConfig();
+        await apiWsSaveCarousel({
+            customCount: wsData.carouselConfig.customCount,
+            customIds: wsData.carouselConfig.customIds,
+            banners: wsData.carouselConfig.banners || {}
+        });
+        wsSaveCache();
+    } catch (err) {
+        alert("轮播配置保存失败：" + (err.message || "请重试"));
+        try { await wsBootstrap(); wsRenderAdminCarousel(); wsRenderCarousel(); } catch (e) { /* ignore */ }
+    }
 }
 
 function wsRenderAdminCarousel() {
@@ -1163,9 +1231,9 @@ function wsAdminCarouselAddProduct(pid, fromCode) {
         return false;
     }
     ids.push(pid);
-    wsSave();
     wsRenderAdminCarousel();
     wsRenderCarousel();
+    wsPersistCarousel();
     if (fromCode) {
         const inp = document.getElementById("wsAdminCarouselCodeInp");
         if (inp) inp.value = "";
@@ -1200,9 +1268,9 @@ function wsAdminCarouselRemove(pid) {
     if (wsData.carouselConfig.banners && wsData.carouselConfig.banners[pid]) {
         delete wsData.carouselConfig.banners[pid];
     }
-    wsSave();
     wsRenderAdminCarousel();
     wsRenderCarousel();
+    wsPersistCarousel();
 }
 
 function wsAdminCarouselMove(pid, delta) {
@@ -1214,9 +1282,9 @@ function wsAdminCarouselMove(pid, delta) {
     const j = i + delta;
     if (j < 0 || j >= ids.length) return;
     [ids[i], ids[j]] = [ids[j], ids[i]];
-    wsSave();
     wsRenderAdminCarousel();
     wsRenderCarousel();
+    wsPersistCarousel();
 }
 
 function wsAdminCarouselSetBanner(pid) {
@@ -1231,9 +1299,9 @@ function wsAdminCarouselSetBanner(pid) {
             .then((url) => {
                 wsData.carouselConfig.banners = wsData.carouselConfig.banners || {};
                 wsData.carouselConfig.banners[pid] = url;
-                wsSave();
                 wsRenderAdminCarousel();
                 wsRenderCarousel();
+                wsPersistCarousel();
                 alert("推荐大图已设置");
             })
             .catch((err) => {
@@ -1242,10 +1310,10 @@ function wsAdminCarouselSetBanner(pid) {
                 r.onload = (e) => {
                     wsData.carouselConfig.banners = wsData.carouselConfig.banners || {};
                     wsData.carouselConfig.banners[pid] = e.target.result;
-                    wsSave();
                     wsRenderAdminCarousel();
                     wsRenderCarousel();
-                    alert("推荐大图已设置");
+                    wsPersistCarousel();
+                    alert("推荐大图已设置（图片上传接口不可用，本次使用内嵌存储）");
                 };
                 r.readAsDataURL(input.files[0]);
             });
@@ -1253,99 +1321,119 @@ function wsAdminCarouselSetBanner(pid) {
     input.click();
 }
 
-function wsApproveLeader(appId) {
+async function wsApproveLeader(appId) {
     const app = wsData.applications.find((a) => a.id === appId);
     if (!app) return;
     const days = parseInt(prompt("团长有效期（天）", "30"), 10) || 30;
-    let rec = wsData.leaders.find((l) => l.user === app.user);
-    if (!rec) {
-        rec = { user: app.user, groupIds: [], expiresAt: Date.now() + days * 86400000, active: true };
-        wsData.leaders.push(rec);
-    } else {
-        rec.expiresAt = Date.now() + days * 86400000;
-        rec.active = true;
+    try {
+        await apiWsReviewApplication(appId, "approve", days);
+        alert(`已批准 ${app.user} 的团长资格（${days} 天）`);
+        await wsRefresh();
+        wsRenderAdmin();
+    } catch (err) {
+        alert(err.message || "操作失败");
     }
-    app.status = "approved";
-    wsSave();
-    wsRenderAdmin();
-    alert("已批准团长资格");
 }
 
-function wsRevokeLeader(user) {
-    const rec = wsData.leaders.find((l) => l.user === user);
-    if (rec) rec.active = false;
-    wsSave();
-    wsRenderAdmin();
+async function wsRevokeLeader(leaderUid) {
+    if (!confirm("确定取消该团长资格？")) return;
+    try {
+        await apiWsLeaderGroupAction(leaderUid, "revoke");
+        await wsRefresh();
+        wsRenderAdmin();
+        alert("已取消团长资格");
+    } catch (err) {
+        alert(err.message || "操作失败");
+    }
 }
 
-function wsAdminAddGroup() {
+async function wsAdminAddGroup() {
     const leader = document.getElementById("wsAdminGroupLeader").value.trim();
     const name = document.getElementById("wsAdminGroupName").value.trim();
     const start = document.getElementById("wsAdminGroupStart").value;
     const end = document.getElementById("wsAdminGroupEnd").value;
     const max = parseInt(document.getElementById("wsAdminGroupMax").value, 10) || 5;
     if (!leader || !name || !start || !end) return alert("请填写完整");
-    const lrec = wsData.leaders.find((l) => l.user === leader && l.active !== false);
-    if (!lrec) return alert("该用户不是团长，请先批准");
-    if ((lrec.groupIds || []).length >= 2) return alert("该团长已有2个团");
-    const id = "g_" + Date.now();
-    wsData.groups.push({
-        id,
-        name,
-        leaderUser: leader,
-        startAt: new Date(start).getTime(),
-        endAt: new Date(end + "T23:59:59").getTime(),
-        maxProducts: max,
-        active: true
-    });
-    lrec.groupIds = lrec.groupIds || [];
-    lrec.groupIds.push(id);
-    wsSave();
-    wsRenderAdmin();
-    alert("团已创建");
-}
-
-function wsToggleGroup(gid) {
-    const g = wsData.groups.find((x) => x.id === gid);
-    if (g) g.active = !g.active;
-    wsSave();
-    wsRenderAdmin();
-}
-
-function wsSetProductStatus(pid, status) {
-    const p = wsData.products.find((x) => x.id === pid);
-    if (p) p.status = status;
-    if (status === "offline") {
-        wsEnsureCarouselConfig();
-        wsData.carouselConfig.customIds = (wsData.carouselConfig.customIds || []).filter((id) => id !== pid);
+    try {
+        await apiWsCreateGroup({
+            name,
+            leaderUser: leader,
+            startAt: new Date(start + "T00:00:00").getTime(),
+            endAt: new Date(end + "T23:59:59").getTime(),
+            maxProducts: max
+        });
+        document.getElementById("wsAdminGroupName").value = "";
+        await wsRefresh();
+        wsRenderAdmin();
+        alert("团已创建");
+    } catch (err) {
+        alert(err.message || "创建失败");
     }
-    wsSave();
-    wsRenderAdmin();
-    wsRenderAll();
+}
+
+async function wsToggleGroup(gid) {
+    const g = wsData.groups.find((x) => x.id === gid);
+    if (!g) return;
+    try {
+        await apiWsUpdateGroup(gid, { active: !g.active });
+        await wsRefresh();
+        wsRenderAdmin();
+    } catch (err) {
+        alert(err.message || "操作失败");
+    }
+}
+
+async function wsSetProductStatus(pid, status) {
+    try {
+        await apiUpdateProduct(pid, { status });
+        if (status === "offline") {
+            wsEnsureCarouselConfig();
+            const cfg = wsData.carouselConfig;
+            if ((cfg.customIds || []).includes(pid)) {
+                cfg.customIds = cfg.customIds.filter((id) => id !== pid);
+                if (cfg.banners) delete cfg.banners[pid];
+                await apiWsSaveCarousel({
+                    customCount: cfg.customCount,
+                    customIds: cfg.customIds,
+                    banners: cfg.banners || {}
+                });
+            }
+        }
+        await wsRefresh();
+        wsRenderAdmin();
+    } catch (err) {
+        alert(err.message || "操作失败");
+    }
 }
 
 // 审核通过制品
-function wsApproveProduct(pid) {
+async function wsApproveProduct(pid) {
     const p = wsData.products.find((x) => x.id === pid);
     if (!p) return;
     if (!confirm(`确认通过「${p.name}」的上架申请？`)) return;
-    p.status = "active";
-    wsSave();
-    wsRenderAdmin();
-    wsRenderAll();
-    alert("已上架！");
+    try {
+        await apiUpdateProduct(pid, { status: "active" });
+        await wsRefresh();
+        wsRenderAdmin();
+        alert("已上架！");
+    } catch (err) {
+        alert(err.message || "操作失败");
+    }
 }
 
-// 驳回制品
-function wsRejectProduct(pid) {
+// 驳回制品（删除）
+async function wsRejectProduct(pid) {
     const p = wsData.products.find((x) => x.id === pid);
     if (!p) return;
     if (!confirm(`确认驳回「${p.name}」？制品将被删除。`)) return;
-    wsData.products = wsData.products.filter((x) => x.id !== pid);
-    wsSave();
-    wsRenderAdmin();
-    wsRenderAll();
-    alert("已驳回！");
+    try {
+        await apiDeleteProduct(pid);
+        await wsRefresh();
+        wsRenderAdmin();
+        alert("已驳回！");
+    } catch (err) {
+        alert(err.message || "操作失败");
+    }
 }
 
 function wsToggleFeatured(pid) {
@@ -1366,124 +1454,131 @@ function wsToggleFeatured(pid) {
         }
         ids.push(pid);
     }
-    wsSave();
     wsRenderAdmin();
     wsRenderCarousel();
+    wsPersistCarousel();
 }
 
-function wsAdminAddCategory() {
+async function wsAdminAddCategory() {
     const name = document.getElementById("wsAdminCatName").value.trim();
     const subs = document.getElementById("wsAdminCatSubs").value.split(/[,，]/).map((s) => s.trim()).filter(Boolean);
-    if (!name) return;
-    wsData.categories.push({ id: "cat_" + Date.now(), name, subs });
-    wsSave();
-    wsRenderCategoryTree();
-    wsRenderAdmin();
-}
-
-function wsRemoveCategory(i) {
-    wsData.categories.splice(i, 1);
-    wsSave();
-    wsRenderCategoryTree();
-    wsRenderAdmin();
-}
-
-/** 演示：加载示例团与商品（管理员测试用） */
-function wsDemoSeedWorkshop() {
-    if (!wsIsAdmin) return alert("仅管理员可用");
-    wsLoad();
-    wsEnsureProductCodes();
-    const leaderName = wsUser?.name || "admin";
-    let rec = wsData.leaders.find((l) => l.user === leaderName);
-    if (!rec) {
-        rec = { user: leaderName, groupIds: [], expiresAt: Date.now() + 30 * 86400000, active: true };
-        wsData.leaders.push(rec);
-    } else {
-        rec.active = true;
-        rec.expiresAt = Date.now() + 30 * 86400000;
-    }
-    let gid = rec.groupIds?.[0];
-    let g = gid ? wsData.groups.find((x) => x.id === gid) : null;
-    if (!g) {
-        gid = "g_demo_" + Date.now();
-        g = {
-            id: gid,
-            name: "演示团·米米好物",
-            leaderUser: leaderName,
-            startAt: Date.now() - 86400000,
-            endAt: Date.now() + 30 * 86400000,
-            maxProducts: 10,
-            active: true
-        };
-        wsData.groups.push(g);
-        rec.groupIds = rec.groupIds || [];
-        rec.groupIds.push(gid);
-    }
-    const demos = [
-        { name: "手工玉米挂件", desc: "演示商品 A", majorCat: "饰品", minorCat: "挂件", want: 12 },
-        { name: "校园文创徽章", desc: "演示商品 B", majorCat: "饰品", minorCat: "其他", want: 8 },
-        { name: "10cm 棉花娃娃", desc: "演示商品 C", majorCat: "娃娃", minorCat: "10cm娃", want: 5 }
-    ];
-    const added = [];
-    demos.forEach((d) => {
-        if (wsData.products.some((p) => p.name === d.name && p.groupId === gid)) return;
-        const codeInfo = wsAllocateProductCode();
-        wsData.products.push({
-            id: "p_demo_" + Date.now() + "_" + codeInfo.codeNum,
-            codeNum: codeInfo.codeNum,
-            code: codeInfo.code,
-            groupId: gid,
-            name: d.name,
-            desc: d.desc,
-            majorCat: d.majorCat,
-            minorCat: d.minorCat,
-            image: "",
-            contactImage: "",
-            hasQuestion: false,
-            wantCount: d.want,
-            status: "active",
-            listedUntil: g.endAt,
-            leaderUser: leaderName,
-            createdAt: Date.now()
-        });
-        added.push(codeInfo.code);
-    });
-    wsSave();
-    wsUpdateToolbar();
-    wsRenderAll();
-    if (typeof wsRenderAdmin === "function" && document.getElementById("modalWsAdmin")?.style.display === "flex") {
+    if (!name) return alert("请填写分类名");
+    try {
+        await apiWsCreateCategory(name, subs);
+        document.getElementById("wsAdminCatName").value = "";
+        document.getElementById("wsAdminCatSubs").value = "";
+        await wsRefresh();
         wsRenderAdmin();
+    } catch (err) {
+        alert(err.message || "操作失败");
     }
-    alert(`演示数据已加载！\n团长：${leaderName}\n团名：${g.name}\n商品编号：${added.join("、") || "（已有商品未重复添加）"}\n\n可在管理后台用编号配置精品推荐。`);
+}
+
+async function wsRemoveCategory(catId) {
+    if (!confirm("确定删除该分类？")) return;
+    try {
+        await apiWsDeleteCategory(catId);
+        await wsRefresh();
+        wsRenderAdmin();
+    } catch (err) {
+        alert(err.message || "操作失败");
+    }
+}
+
+/** 演示：加载示例团与商品（管理员测试用，数据落库） */
+async function wsDemoSeedWorkshop() {
+    if (!wsIsAdmin) return alert("仅管理员可用");
+    if (!wsUser?.uid) return alert("登录信息缺失，请重新从米米宇宙进入");
+    try {
+        // 1. 确保自己是团长
+        await apiWsGrantLeader(wsUser.uid, 30);
+        await wsBootstrap();
+        const leaderName = wsUser.name;
+
+        // 2. 找自己名下第一个有效团，没有就建
+        const myRec = wsLeaderRecord();
+        let g = (myRec?.groupIds || [])
+            .map((id) => wsData.groups.find((x) => x.id === id))
+            .find(Boolean);
+        if (!g) {
+            g = await apiWsCreateGroup({
+                name: "演示团·米米好物",
+                leaderUser: leaderName,
+                startAt: Date.now() - 86400000,
+                endAt: Date.now() + 30 * 86400000,
+                maxProducts: 10
+            });
+        }
+
+        // 3. 补 3 件演示商品
+        const demos = [
+            { name: "手工玉米挂件", desc: "演示商品 A", majorCat: "饰品", minorCat: "挂件" },
+            { name: "校园文创徽章", desc: "演示商品 B", majorCat: "饰品", minorCat: "其他" },
+            { name: "10cm 棉花娃娃", desc: "演示商品 C", majorCat: "娃娃", minorCat: "10cm娃" }
+        ];
+        const added = [];
+        for (const d of demos) {
+            if (wsData.products.some((p) => p.name === d.name && p.groupId === g.id)) continue;
+            const res = await apiCreateProduct({
+                groupId: g.id,
+                name: d.name,
+                desc: d.desc,
+                majorCat: d.majorCat,
+                minorCat: d.minorCat,
+                image: "",
+                contactImage: "",
+                hasQuestion: false
+            });
+            if (res?.product?.code) added.push(res.product.code);
+        }
+
+        await wsRefresh();
+        alert(`演示数据已加载！\n团长：${leaderName}\n团名：${g.name}\n商品编号：${added.join("、") || "（已有商品未重复添加）"}\n\n可在管理后台用编号配置精品推荐。`);
+    } catch (err) {
+        alert(err.message || "演示数据加载失败");
+    }
 }
 
 /** 演示：当前登录账号直接成为团长（跳过审核） */
-function wsDemoMakeCurrentUserLeader() {
-    wsLoad();
+async function wsDemoMakeCurrentUserLeader() {
     wsSyncFromMain();
-    const name = wsUser?.name || currentUser?.name;
-    if (!name) return alert("请先登录");
+    if (!wsUser?.uid) return alert("请先登录");
     if (!wsIsAdmin && !confirm("仅建议管理员用于测试。确定将当前账号设为团长？")) return;
-    let rec = wsData.leaders.find((l) => l.user === name);
-    if (!rec) {
-        rec = { user: name, groupIds: [], expiresAt: Date.now() + 30 * 86400000, active: true };
-        wsData.leaders.push(rec);
-    } else {
-        rec.active = true;
-        rec.expiresAt = Date.now() + 30 * 86400000;
+    try {
+        await apiWsGrantLeader(wsUser.uid, 30);
+        await wsRefresh();
+        alert(`已为「${wsUser.name}」开通团长资格（30天）。\n请让管理员在后台「创建团」后，即可使用「我要上架」。\n或点击「加载演示数据」自动创建演示团与商品。`);
+    } catch (err) {
+        alert(err.message || "操作失败");
     }
-    (wsData.applications || []).filter((a) => a.user === name && a.status === "pending").forEach((a) => {
-        a.status = "approved";
-    });
-    wsSave();
-    wsUpdateToolbar();
-    alert(`已为「${name}」开通团长资格（30天）。\n请让管理员在后台「创建团」后，即可使用「我要上架」。\n或点击「加载演示数据」自动创建演示团与商品。`);
 }
 
 function wsInit() {
-    wsLoad();
+    // 解析 iframe 注入的 token/用户名/角色（api.js 也提供解析函数）
+    if (typeof apiParseAuthFromUrl === "function") apiParseAuthFromUrl();
+    wsSyncFromMain();
+
+    // 首屏先用本地缓存渲染分类树（数据可能过期，随后被 API 覆盖）
+    wsLoadCache();
     wsRenderCategoryTree();
-    wsTryAutoLogin();
+
+    const workshopOnly = new URLSearchParams(window.location.search).get("workshopOnly") === "true";
+    if (workshopOnly) {
+        // 作坊独立 iframe：进入即拉数据、弹免责声明
+        if (wsHasAuth()) {
+            wsEnterPage();
+        } else {
+            wsShowEnterHint();
+        }
+    } else if (wsHasAuth()) {
+        // 课程表页内嵌的作坊 Tab：预加载数据，切到 W 页时直接渲染
+        if (!wsBootstrapping) {
+            wsBootstrapping = wsBootstrap()
+                .then(() => { wsUpdateToolbar(); })
+                .catch((err) => console.warn("作坊预加载失败:", err))
+                .finally(() => { wsBootstrapping = null; });
+        }
+    }
 }
 
 document.addEventListener("DOMContentLoaded", wsInit);

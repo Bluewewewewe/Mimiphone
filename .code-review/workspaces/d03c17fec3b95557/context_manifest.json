@@ -1,0 +1,16 @@
+{
+  "workspace": "/Coze/Drive/屁屁/所有对话/主对话/米米宇宙代码审查/repo-main/.code-review/workspaces/d03c17fec3b95557",
+  "repo_path": "/Coze/Drive/屁屁/所有对话/主对话/米米宇宙代码审查/repo-main",
+  "review_tool": "/Coze/Drive/屁屁/所有对话/主对话/.skills/skill_code-review/scripts/review.py",
+  "skill_dir": "/Coze/Drive/屁屁/所有对话/主对话/.skills/skill_code-review",
+  "reviewer_reference": "/Coze/Drive/屁屁/所有对话/主对话/.skills/skill_code-review/references/code-reviewer.md",
+  "taxonomy_reference": "/Coze/Drive/屁屁/所有对话/主对话/.skills/skill_code-review/references/issue-taxonomy.md",
+  "verify_reference": "/Coze/Drive/屁屁/所有对话/主对话/.skills/skill_code-review/references/verify-agent.md",
+  "review_files_dir": "/Coze/Drive/屁屁/所有对话/主对话/米米宇宙代码审查/repo-main/.code-review/workspaces/d03c17fec3b95557/review_files",
+  "source_files_dir": "/Coze/Drive/屁屁/所有对话/主对话/米米宇宙代码审查/repo-main/.code-review/workspaces/d03c17fec3b95557/source_files",
+  "context_roots": [
+    "/Coze/Drive/屁屁/所有对话/主对话/米米宇宙代码审查/repo-main/.code-review/workspaces/d03c17fec3b95557",
+    "/Coze/Drive/屁屁/所有对话/主对话/米米宇宙代码审查/repo-main",
+    "/Coze/Drive/屁屁/所有对话/主对话/.skills/skill_code-review"
+  ]
+}

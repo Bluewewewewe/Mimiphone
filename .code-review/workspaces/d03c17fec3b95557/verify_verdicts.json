@@ -1,0 +1,23 @@
+[
+  {
+    "id": "96b7772d-5b21-4508-9811-7f2022e3f88d",
+    "verdict": "keep",
+    "reason": "已二次验证：前端12处weiboLink引用且必填，后端body解构0处、register INSERT 0处weibo_link、校验无weiboLink，字段被静默丢弃，P0成立"
+  },
+  {
+    "id": "157557c2-688b-48d3-a370-ee1e9350e39e",
+    "verdict": "keep",
+    "suggestion_verdict": "omit",
+    "reason": "schema v2中nickname/weibo_nickname列数为0，代码与schema漂移属实；线上库可能已ALTER，需用户核对线上表后定列名，只保留问题不给替换代码"
+  },
+  {
+    "id": "4154eff7-e97b-4a86-b9fc-ce5126c8f16e",
+    "verdict": "keep",
+    "reason": "weibo_link为用户可控内容直接入href无协议校验，存储型XSS风险成立，P1合理；http/https白名单建议正确"
+  },
+  {
+    "id": "8b6db1b8-8a54-4a1e-be67-7be1fd69b119",
+    "verdict": "keep",
+    "reason": "复制按钮成功失败均无反馈、catch为空注释，证据明确，P3成立"
+  }
+]

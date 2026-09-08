@@ -1,0 +1,220 @@
+{
+  "src/app/api/admin/review-queue/route.ts": [
+    {
+      "old_start": 44,
+      "old_count": 7,
+      "new_start": 44,
+      "new_count": 7,
+      "new_end": 50,
+      "added_ranges": [
+        {
+          "start": 47,
+          "end": 47
+        }
+      ]
+    },
+    {
+      "old_start": 65,
+      "old_count": 7,
+      "new_start": 65,
+      "new_count": 7,
+      "new_end": 71,
+      "added_ranges": [
+        {
+          "start": 68,
+          "end": 68
+        }
+      ]
+    },
+    {
+      "old_start": 358,
+      "old_count": 7,
+      "new_start": 358,
+      "new_count": 7,
+      "new_end": 364,
+      "added_ranges": [
+        {
+          "start": 361,
+          "end": 361
+        }
+      ]
+    },
+    {
+      "old_start": 373,
+      "old_count": 6,
+      "new_start": 373,
+      "new_count": 7,
+      "new_end": 379,
+      "added_ranges": [
+        {
+          "start": 376,
+          "end": 376
+        }
+      ]
+    }
+  ],
+  "src/app/api/admin/tree/route.ts": [
+    {
+      "old_start": 12,
+      "old_count": 7,
+      "new_start": 12,
+      "new_count": 7,
+      "new_end": 18,
+      "added_ranges": [
+        {
+          "start": 15,
+          "end": 15
+        }
+      ]
+    }
+  ],
+  "src/app/api/auth/route.ts": [
+    {
+      "old_start": 587,
+      "old_count": 6,
+      "new_start": 587,
+      "new_count": 7,
+      "new_end": 593,
+      "added_ranges": [
+        {
+          "start": 590,
+          "end": 590
+        }
+      ]
+    },
+    {
+      "old_start": 624,
+      "old_count": 6,
+      "new_start": 625,
+      "new_count": 7,
+      "new_end": 631,
+      "added_ranges": [
+        {
+          "start": 628,
+          "end": 628
+        }
+      ]
+    },
+    {
+      "old_start": 906,
+      "old_count": 7,
+      "new_start": 908,
+      "new_count": 7,
+      "new_end": 914,
+      "added_ranges": [
+        {
+          "start": 911,
+          "end": 911
+        }
+      ]
+    }
+  ],
+  "src/app/phone/page.tsx": [
+    {
+      "old_start": 2949,
+      "old_count": 6,
+      "new_start": 2949,
+      "new_count": 10,
+      "new_end": 2958,
+      "added_ranges": [
+        {
+          "start": 2952,
+          "end": 2955
+        }
+      ]
+    },
+    {
+      "old_start": 2984,
+      "old_count": 6,
+      "new_start": 2988,
+      "new_count": 7,
+      "new_end": 2994,
+      "added_ranges": [
+        {
+          "start": 2991,
+          "end": 2991
+        }
+      ]
+    },
+    {
+      "old_start": 3002,
+      "old_count": 6,
+      "new_start": 3007,
+      "new_count": 7,
+      "new_end": 3013,
+      "added_ranges": [
+        {
+          "start": 3010,
+          "end": 3010
+        }
+      ]
+    },
+    {
+      "old_start": 11404,
+      "old_count": 6,
+      "new_start": 11410,
+      "new_count": 57,
+      "new_end": 11466,
+      "added_ranges": [
+        {
+          "start": 11413,
+          "end": 11463
+        }
+      ]
+    }
+  ],
+  "src/components/admin/review-queue.tsx": [
+    {
+      "old_start": 8,
+      "old_count": 6,
+      "new_start": 8,
+      "new_count": 7,
+      "new_end": 14,
+      "added_ranges": [
+        {
+          "start": 11,
+          "end": 11
+        }
+      ]
+    },
+    {
+      "old_start": 41,
+      "old_count": 6,
+      "new_start": 42,
+      "new_count": 7,
+      "new_end": 48,
+      "added_ranges": [
+        {
+          "start": 45,
+          "end": 45
+        }
+      ]
+    },
+    {
+      "old_start": 89,
+      "old_count": 8,
+      "new_start": 91,
+      "new_count": 8,
+      "new_end": 98,
+      "added_ranges": [
+        {
+          "start": 94,
+          "end": 95
+        }
+      ]
+    },
+    {
+      "old_start": 359,
+      "old_count": 6,
+      "new_start": 361,
+      "new_count": 32,
+      "new_end": 392,
+      "added_ranges": [
+        {
+          "start": 364,
+          "end": 389
+        }
+      ]
+    }
+  ]
+}

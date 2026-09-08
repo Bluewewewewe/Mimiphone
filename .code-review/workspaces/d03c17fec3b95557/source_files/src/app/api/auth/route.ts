@@ -282,7 +282,6 @@ export async function POST(request: NextRequest) {
       targetUserIds,
       invitationCode,
       weiboName,
-      weiboLink,
       reason,
       authToken,
       currentPassword,
@@ -327,22 +326,6 @@ export async function POST(request: NextRequest) {
       if (!username || !password || !invitationCode || !weiboName) {
         return NextResponse.json(
           { error: "请填写用户名、密码、微博昵称和邀请码" },
-          { status: 400 }
-        );
-      }
-
-      if (!weiboLink || !weiboLink.trim()) {
-        return NextResponse.json(
-          { error: "请填写微博主页链接" },
-          { status: 400 }
-        );
-      }
-
-      // 微博链接安全校验：只允许 http/https 协议
-      const trimmedLink = weiboLink.trim();
-      if (!/^https?:\/\//i.test(trimmedLink)) {
-        return NextResponse.json(
-          { error: "微博主页链接必须以 http:// 或 https:// 开头" },
           { status: 400 }
         );
       }
@@ -425,7 +408,6 @@ export async function POST(request: NextRequest) {
           password: passwordHash,
           display_name: displayName || username,
           weibo_name: weiboName,
-          weibo_link: trimmedLink,
           role,
           status: "pending",
           invite_code_used: normalizedCode,

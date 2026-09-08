@@ -1,0 +1,33 @@
+{
+  "strategy": "single",
+  "max_parallel_reviewers": 1,
+  "review_group_size": 5,
+  "groups": [
+    {
+      "id": 1,
+      "files": [
+        {
+          "path": "src/app/api/admin/review-queue/route.ts",
+          "lines": 28
+        },
+        {
+          "path": "src/app/api/admin/tree/route.ts",
+          "lines": 7
+        },
+        {
+          "path": "src/app/api/auth/route.ts",
+          "lines": 21
+        },
+        {
+          "path": "src/app/phone/page.tsx",
+          "lines": 81
+        },
+        {
+          "path": "src/components/admin/review-queue.tsx",
+          "lines": 54
+        }
+      ],
+      "total_lines": 191
+    }
+  ]
+}
