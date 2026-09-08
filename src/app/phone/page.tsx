@@ -1761,6 +1761,194 @@ const KNOB_STYLES: Array<{ id: string; label: string; icon: string }> = [
     { id: "flower", label: "花朵", icon: "✿" }
 ];
 
+// ============ 兑换码页面组件 ============
+function RedeemCodePage({ authToken, onClose }: { authToken: string; onClose: () => void }) {
+    const [code, setCode] = useState("");
+    const [step, setStep] = useState<"input" | "preview" | "success">("input");
+    const [rewardInfo, setRewardInfo] = useState<{ rewardAmount: number; code: string } | null>(null);
+    const [successAmount, setSuccessAmount] = useState(0);
+    const [loading, setLoading] = useState(false);
+    const [error, setError] = useState("");
+
+    const handleVerify = async () => {
+        if (!code.trim()) { setError("请输入兑换码"); return; }
+        setError("");
+        setLoading(true);
+        try {
+            const res = await fetch("/api/redeem", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ action: "verify", code: code.trim(), authToken }),
+            });
+            const json = await res.json();
+            if (json.success) {
+                setRewardInfo({ rewardAmount: json.data.rewardAmount, code: json.data.code });
+                setStep("preview");
+            } else {
+                setError(json.error || "兑换码无效");
+            }
+        } catch {
+            setError("网络错误");
+        }
+        setLoading(false);
+    };
+
+    const handleRedeem = async () => {
+        setError("");
+        setLoading(true);
+        try {
+            const res = await fetch("/api/redeem", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ action: "redeem", code: code.trim(), authToken }),
+            });
+            const json = await res.json();
+            if (json.success) {
+                setSuccessAmount(json.data.amount);
+                setStep("success");
+            } else {
+                setError(json.error || "兑换失败");
+            }
+        } catch {
+            setError("网络错误");
+        }
+        setLoading(false);
+    };
+
+    return (
+        <div style={{ padding: 16 }}>
+            <div style={{ fontSize: 16, fontWeight: 700, color: "#92400e", marginBottom: 16 }}>🎁 兑换码</div>
+
+            {step === "input" && (
+                <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+                    <div style={{ fontSize: 12, color: "#4a7c50" }}>输入兑换码</div>
+                    <input
+                        type="text"
+                        value={code}
+                        onChange={(e) => setCode(e.target.value)}
+                        placeholder="请输入兑换码"
+                        style={{
+                            width: "100%",
+                            padding: "12px",
+                            borderRadius: 10,
+                            border: "1px solid #b8dcc4",
+                            background: "rgba(255,255,255,0.8)",
+                            fontSize: 16,
+                            color: "#2e5c33",
+                            letterSpacing: 2,
+                            fontFamily: "monospace",
+                        }}
+                    />
+                    {error && <div style={{ fontSize: 12, color: "#ef4444" }}>{error}</div>}
+                    <button
+                        onClick={handleVerify}
+                        disabled={loading}
+                        style={{
+                            width: "100%",
+                            padding: "12px",
+                            borderRadius: 10,
+                            border: "none",
+                            background: "#2e7d32",
+                            color: "#fff",
+                            fontWeight: 600,
+                            fontSize: 14,
+                            opacity: loading ? 0.6 : 1,
+                        }}
+                    >
+                        {loading ? "验证中..." : "验证兑换码"}
+                    </button>
+                    <button
+                        onClick={onClose}
+                        style={{ width: "100%", padding: "10px", borderRadius: 10, border: "none", background: "#e5e7eb", color: "#78350f", fontWeight: 500, fontSize: 13 }}
+                    >
+                        ← 返回设置
+                    </button>
+                </div>
+            )}
+
+            {step === "preview" && rewardInfo && (
+                <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+                    <div style={{
+                        background: "linear-gradient(135deg, #fef3c7, #fde68a)",
+                        borderRadius: 16,
+                        padding: 20,
+                        textAlign: "center",
+                        border: "1px solid #f59e0b",
+                    }}>
+                        <div style={{ fontSize: 32, marginBottom: 8 }}>🎉</div>
+                        <div style={{ fontSize: 14, color: "#92400e", marginBottom: 4 }}>兑换码有效！</div>
+                        <div style={{ fontSize: 28, fontWeight: 700, color: "#b45309" }}>+{rewardInfo.rewardAmount}</div>
+                        <div style={{ fontSize: 12, color: "#a16207" }}>米米币</div>
+                    </div>
+                    {error && <div style={{ fontSize: 12, color: "#ef4444" }}>{error}</div>}
+                    <button
+                        onClick={handleRedeem}
+                        disabled={loading}
+                        style={{
+                            width: "100%",
+                            padding: "14px",
+                            borderRadius: 12,
+                            border: "none",
+                            background: "linear-gradient(135deg, #f59e0b, #d97706)",
+                            color: "#fff",
+                            fontWeight: 700,
+                            fontSize: 16,
+                            opacity: loading ? 0.6 : 1,
+                        }}
+                    >
+                        {loading ? "兑换中..." : `确认兑换 ${rewardInfo.rewardAmount} 米米币`}
+                    </button>
+                    <button
+                        onClick={() => { setStep("input"); setRewardInfo(null); setError(""); }}
+                        style={{ width: "100%", padding: "10px", borderRadius: 10, border: "none", background: "#e5e7eb", color: "#78350f", fontWeight: 500, fontSize: 13 }}
+                    >
+                        ← 重新输入
+                    </button>
+                </div>
+            )}
+
+            {step === "success" && (
+                <div style={{ display: "flex", flexDirection: "column", gap: 12, alignItems: "center" }}>
+                    <div style={{
+                        background: "linear-gradient(135deg, #d1fae5, #a7f3d0)",
+                        borderRadius: 16,
+                        padding: 24,
+                        textAlign: "center",
+                        border: "1px solid #34d399",
+                        width: "100%",
+                    }}>
+                        <div style={{ fontSize: 40, marginBottom: 8 }}>✨</div>
+                        <div style={{ fontSize: 16, fontWeight: 700, color: "#065f46", marginBottom: 4 }}>兑换成功！</div>
+                        <div style={{ fontSize: 32, fontWeight: 700, color: "#047857" }}>+{successAmount}</div>
+                        <div style={{ fontSize: 13, color: "#059669" }}>米米币已到账</div>
+                    </div>
+                    <button
+                        onClick={() => { setStep("input"); setCode(""); setRewardInfo(null); setError(""); }}
+                        style={{
+                            width: "100%",
+                            padding: "12px",
+                            borderRadius: 10,
+                            border: "none",
+                            background: "#2e7d32",
+                            color: "#fff",
+                            fontWeight: 600,
+                            fontSize: 14,
+                        }}
+                    >
+                        继续兑换
+                    </button>
+                    <button
+                        onClick={onClose}
+                        style={{ width: "100%", padding: "10px", borderRadius: 10, border: "none", background: "#e5e7eb", color: "#78350f", fontWeight: 500, fontSize: 13 }}
+                    >
+                        ← 返回设置
+                    </button>
+                </div>
+            )}
+        </div>
+    );
+}
+
 export default function PhonePage() {
     const [time, setTime] = useState("--:--");
     const [dateStr, setDateStr] = useState("");
@@ -2235,7 +2423,7 @@ export default function PhonePage() {
         }
     }, [loginUsername]);
 
-    const [meSubPage, setMeSubPage] = useState<"main" | "settings" | "identity" | "unlock" | "about" | "invite" | "account" | "wallpaper" | "theme" | "change-password" | "knob-style" | "bio">("main");
+    const [meSubPage, setMeSubPage] = useState<"main" | "settings" | "identity" | "unlock" | "about" | "invite" | "account" | "wallpaper" | "theme" | "change-password" | "knob-style" | "bio" | "redeem">("main");
     const [identityStep, setIdentityStep] = useState(0);
     const [debugMode, setDebugMode] = useState(false);
     const [debugLevel, setDebugLevel] = useState<number | "all" | null>(null);
@@ -8731,6 +8919,11 @@ export default function PhonePage() {
                         <span className="me-menu-label">修改密码</span>
                         <span className="me-menu-arrow">›</span>
                     </div>
+                    <div className="me-menu-item" onClick={() => setMeSubPage("redeem")}>
+                        <span className="me-menu-icon">🎁</span>
+                        <span className="me-menu-label">兑换码</span>
+                        <span className="me-menu-arrow">›</span>
+                    </div>
                     <div className="me-menu-item" onClick={() => setMeSubPage("knob-style")}>
                         <span className="me-menu-icon">🎛️</span>
                         <span className="me-menu-label">悬浮按钮样式</span>
@@ -8805,6 +8998,10 @@ export default function PhonePage() {
                                   </button>
                 </div>
             );
+        }
+
+        if (meSubPage === "redeem") {
+            return <RedeemCodePage authToken={typeof authToken !== "undefined" ? authToken : ""} onClose={() => setMeSubPage("settings")} />;
         }
 
         if (meSubPage === "invite") {
