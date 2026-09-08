@@ -7,6 +7,7 @@ import AdminTree from "./admin/admin-tree";
 import ReviewQueue from "./admin/review-queue";
 import { AdminPermissions } from "./admin/admin-permissions";
 import { AdminAuditLog } from "./admin/admin-audit-log";
+import { AdminRedeem } from "./admin/admin-redeem";
 
 interface AdminDashboardProps {
   token: string;
@@ -14,7 +15,7 @@ interface AdminDashboardProps {
   onClose: () => void;
 }
 
-type Tab = "overview" | "users" | "tree" | "review" | "invites" | "forum" | "announce" | "bugs" | "permissions" | "audit_log" | "settings";
+type Tab = "overview" | "users" | "tree" | "review" | "invites" | "redeem" | "forum" | "announce" | "bugs" | "permissions" | "audit_log" | "settings";
 
 interface User {
   id: string;
@@ -160,6 +161,7 @@ export default function AdminDashboard({ token, username, onClose }: AdminDashbo
     { id: "tree", label: "邀请树", icon: "🌳", permission: "tree_view" },
     { id: "review", label: "用户审核", icon: "👥", permission: "review" },
     { id: "invites", label: "邀请码", icon: "🎟️", permission: "invite_manage" },
+    { id: "redeem", label: "兑换码管理", icon: "🎁", permission: "__super_only__" },
     { id: "forum", label: "论坛管理", icon: "📋", permission: "forum_manage" },
     { id: "announce", label: "官方公告", icon: "📢", permission: "forum_manage" },
     { id: "bugs", label: "Bug反馈", icon: "🐛", permission: "forum_manage" },
@@ -320,6 +322,7 @@ export default function AdminDashboard({ token, username, onClose }: AdminDashbo
       case "tree": return <AdminTree token={token} />;
       case "review": return renderReview();
       case "invites": return renderInvites();
+      case "redeem": return <AdminRedeem token={token} />;
       case "forum": return renderForum();
       case "announce": return renderAnnounce();
       case "bugs": return renderBugs();
