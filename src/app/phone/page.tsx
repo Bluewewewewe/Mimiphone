@@ -9001,7 +9001,7 @@ export default function PhonePage() {
         }
 
         if (meSubPage === "redeem") {
-            return <RedeemCodePage authToken={typeof authToken !== "undefined" ? authToken : ""} onClose={() => setMeSubPage("settings")} />;
+            return <RedeemCodePage authToken={authToken ?? ""} onClose={() => setMeSubPage("settings")} />;
         }
 
         if (meSubPage === "invite") {

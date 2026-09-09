@@ -6,7 +6,7 @@
  */
 import { NextRequest, NextResponse } from "next/server";
 import { verifyToken, type VerifiedUser } from "@/lib/auth";
-import { wsFormatCode } from "@/lib/workshop";
+import { wsFormatCode, type WSProductStatus } from "@/lib/workshop";
 
 export function wsError(message: string, status = 400) {
     return NextResponse.json({ success: false, error: message }, { status });
@@ -118,7 +118,7 @@ export function wsMapProduct(row: Record<string, unknown>) {
         question: (row.question as string) || "",
         answer: (row.answer as string) || "",
         contactImage: (row.contact_image_url as string) || "",
-        status: (row.status as string) || "pending",
+        status: ((row.status as string) || "pending") as WSProductStatus,
         wantCount: (row.want_count as number) ?? 0,
         leaderUser: (row.leader_name as string) || "",
         leaderUid: (row.leader_user_id as string) || "",

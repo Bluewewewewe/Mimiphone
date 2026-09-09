@@ -9,7 +9,7 @@
 import { NextRequest } from "next/server";
 import { getSupabaseClient } from "@/storage/database/supabase-client";
 import { logAudit } from "@/lib/auth";
-import { wsOk, wsError, wsHandleError, wsRequireAdmin, wsMapLeader } from "../../../../_lib";
+import { wsOk, wsError, wsHandleError, wsRequireAdmin, wsMapLeader } from "../../../_lib";
 import { WS_MAX_GROUPS_PER_LEADER, wsValidateLeaderGroupAssign } from "@/lib/workshop";
 
 type Ctx = { params: Promise<{ userId: string }> };
