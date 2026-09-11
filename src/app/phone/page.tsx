@@ -2022,6 +2022,18 @@ export default function PhonePage() {
         }
     });
 
+    // 从应用商店 API 加载的应用状态（用于桌面图标按状态过滤）
+    const [appsFromDB, setAppsFromDB] = useState<Array<{ app_id: string; status: string }>>([]);
+    useEffect(() => {
+        const token = localStorage.getItem("auth_token");
+        fetch("/api/apps?action=list", {
+            headers: token ? { Authorization: `Bearer ${token}` } : {}
+        })
+            .then((r) => r.json())
+            .then((json) => { if (json && json.success) setAppsFromDB(json.data || []); })
+            .catch(() => {});
+    }, []);
+
     const WALLPAPER_PRESETS: Record<string, string> = {
         default: "linear-gradient(175deg, #f0f7f2 0%, #e8f3eb 30%, #dceee2 60%, #d4e8da 100%)",
         fresh: "linear-gradient(135deg, #e8f5e9 0%, #c8e6c9 50%, #a5d6a7 100%)",
@@ -13416,10 +13428,10 @@ export default function PhonePage() {
                                 <div className="home-page">
                                     <div className="app-page-grid page-two">
                                         {SECOND_PAGE_APPS.filter(app => {
-                                            // 只显示已安装或已上架的应用
+                                            // 桌面只显示：已安装的应用
+                                            // 开发中/隐藏/未安装的内测应用 不显示
                                             const isInstalled = installedStoreApps.some(a => a.id === app.id);
-                                            const dbApp = appsFromDB.find(a => a.app_id === app.id || a.id === app.id);
-                                            return isInstalled || (dbApp && dbApp.status === 'published');
+                                            return isInstalled;
                                         }).map((app, idx) => renderAppIcon(app, false, idx))}
                                     </div>
                                 </div>

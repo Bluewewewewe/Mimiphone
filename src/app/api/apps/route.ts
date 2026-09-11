@@ -103,7 +103,9 @@ export async function GET(request: NextRequest) {
 
             let query = supabase.from("apps").select("*").order("order", { ascending: true });
             if (!isAdmin(user)) {
-                query = query.neq("status", "hidden");
+                // 普通用户：只能看到 已上架(published) 和 内测中(beta)
+                // 开发中(dev) 和 隐藏(hidden) 完全不返回
+                query = query.neq("status", "hidden").neq("status", "dev");
             }
             const { data: apps, error } = await query;
             if (error) throw error;
