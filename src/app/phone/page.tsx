@@ -13415,7 +13415,12 @@ export default function PhonePage() {
                                 </div>
                                 <div className="home-page">
                                     <div className="app-page-grid page-two">
-                                        {SECOND_PAGE_APPS.map((app, idx) => renderAppIcon(app, false, idx))}
+                                        {SECOND_PAGE_APPS.filter(app => {
+                                            // 只显示已安装或已上架的应用
+                                            const isInstalled = installedStoreApps.some(a => a.id === app.id);
+                                            const dbApp = appsFromDB.find(a => a.app_id === app.id || a.id === app.id);
+                                            return isInstalled || (dbApp && dbApp.status === 'published');
+                                        }).map((app, idx) => renderAppIcon(app, false, idx))}
                                     </div>
                                 </div>
                             </div>

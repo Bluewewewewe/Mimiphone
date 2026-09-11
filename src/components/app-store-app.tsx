@@ -303,6 +303,7 @@ function AdminPanel({ apps, onRefresh, apiAction }: AdminPanelProps) {
     const [editingApp, setEditingApp] = useState<StoreAppItem | null>(null);
     const [betaCodeApp, setBetaCodeApp] = useState<StoreAppItem | null>(null);
     const [confirmDelete, setConfirmDelete] = useState<StoreAppItem | null>(null);
+    const [confirmStatusChange, setConfirmStatusChange] = useState<{app: StoreAppItem; newStatus: AppStatus} | null>(null);
     const [actionError, setActionError] = useState("");
 
     const s: Record<string, React.CSSProperties> = {
@@ -467,6 +468,38 @@ function AdminPanel({ apps, onRefresh, apiAction }: AdminPanelProps) {
         </div>
     );
 }
+
+// Status change confirm modal
+{confirmStatusChange && (
+    <OverlayModal onClose={() => setConfirmStatusChange(null)}>
+        <div style={{ padding: 4, display: "flex", flexDirection: "column", gap: 14 }}>
+            <div style={{ fontSize: 16, fontWeight: 700, color: "#2e5c33" }}>确认切换状态</div>
+            <div style={{ fontSize: 13, color: "#3d5c45" }}>
+                确定要将应用「{confirmStatusChange.app.name}」切换为
+                <strong>{APP_STATUS_LABEL[confirmStatusChange.newStatus]}</strong> 吗？
+            </div>
+            <div style={{ display: "flex", gap: 10 }}>
+                <button onClick={() => setConfirmStatusChange(null)} style={{
+                    flex: 1, padding: "10px", borderRadius: 12, border: "1px solid rgba(46,92,51,0.2)",
+                    background: "transparent", color: "#2e5c33", fontSize: 14, cursor: "pointer",
+                }}>取消</button>
+                <button onClick={async () => {
+                    try {
+                        await apiAction("update_app", { app: { id: confirmStatusChange.app.id, status: confirmStatusChange.newStatus } });
+                        onUpdate();
+                        setConfirmStatusChange(null);
+                    } catch (e: unknown) {
+                        setActionError(e instanceof Error ? e.message : String(e));
+                        setConfirmStatusChange(null);
+                    }
+                }} style={{
+                    flex: 1, padding: "10px", borderRadius: 12, border: "none",
+                    background: "#2e7d32", color: "#fff", fontSize: 14, fontWeight: 600, cursor: "pointer",
+                }}>确认</button>
+            </div>
+        </div>
+    </OverlayModal>
+)}
 
 // ============ App Form Modal (Create/Edit) ============
 interface AppFormModalProps {
@@ -852,7 +885,7 @@ function AppDetailModal({ app, isAdmin, hasAppManage, installed, betaVerified, o
                                 background: "#2e7d32", color: "#fff", fontSize: 11, cursor: "pointer",
                             }}>编辑应用</button>
                             {STATUS_OPTIONS.filter((o) => o.value !== app.status).map((opt) => (
-                                <button key={opt.value} onClick={() => handleQuickStatusChange(opt.value)} style={{
+                                <button key={opt.value} onClick={() => setConfirmStatusChange({app, newStatus: opt.value})} style={{
                                     padding: "5px 12px", borderRadius: 10, border: "1px solid rgba(46,92,51,0.2)",
                                     background: "transparent", color: "#2e5c33", fontSize: 11, cursor: "pointer",
                                 }}>

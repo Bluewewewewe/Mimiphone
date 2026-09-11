@@ -110,7 +110,7 @@ export function validateCodeInput(code: string): { valid: boolean; error?: strin
   if (!normalized) {
     return { valid: false, error: "请输入兑换码" };
   }
-  if (normalized.length < 5) {
+  if (normalized.length < 4) {
     return { valid: false, error: "兑换码格式不正确" };
   }
   return { valid: true };
