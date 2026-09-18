@@ -50,26 +50,10 @@ interface ForumSection {
     icon: string;
     name: string;
     desc: string;
-    postCount: number;
+    postCount?: number;
 }
 
 // ============ localStorage 数据持久化 ============
-function loadPosts(): ForumPost[] {
-    if (typeof window === "undefined") return [];
-    try {
-        const raw = localStorage.getItem("forum_posts");
-        if (raw) return JSON.parse(raw) as ForumPost[];
-    } catch {
-        // ignore
-    }
-    return [];
-}
-
-function savePosts(posts: ForumPost[]) {
-    if (typeof window === "undefined") return;
-    localStorage.setItem("forum_posts", JSON.stringify(posts));
-}
-
 function loadCustomSections(): ForumSection[] {
     if (typeof window === "undefined") return [];
     try {
@@ -128,8 +112,10 @@ interface ApiPost {
     replyCount?: number;
     likes?: number;
     favorites?: number;
-    forum_replies?: { count: number }[];
-    forum_likes?: { count: number }[];
+    // list 下是 count 聚合 [{count}]；detail 下是回复行数组 ApiReply[]
+    forum_replies?: { count: number }[] | ApiReply[];
+    forum_likes?: { count: number }[] | { user_id: string }[];
+    forum_favorites?: { count: number }[];
     forum_replies_detail?: ApiReply[];
 }
 
@@ -181,7 +167,14 @@ function mapApiReplyToReply(r: ApiReply): ForumReply {
 }
 
 function mapApiPostToPost(p: ApiPost): ForumPost {
-    const topReplies = p.forum_replies_detail || [];
+    // detail 后端返回 forum_replies 回复行数组（并额外给了 forum_replies_detail）；list 下 forum_replies 是 count 聚合。
+    // 三种形态都兼容，避免字段名对不上导致评论全空。
+    const rawReplies: unknown = p.forum_replies_detail ?? p.forum_replies;
+    const topReplies: ApiReply[] = Array.isArray(rawReplies)
+        ? (rawReplies as unknown[]).filter(
+            (r): r is ApiReply => typeof r === "object" && r !== null && "author_name" in r
+        )
+        : [];
     const parentReplies = topReplies.filter((r) => !r.parent_reply_id).map(mapApiReplyToReply);
     const subReplies = topReplies.filter((r) => r.parent_reply_id);
     parentReplies.forEach((r) => {
@@ -197,6 +190,34 @@ function mapApiPostToPost(p: ApiPost): ForumPost {
                 replyTo: r.author,
             }));
     });
+    // 关联表 count 聚合优先（真实值）；冗余数字列只作旧数据兜底
+    const readCount = (
+        nested: unknown,
+        fallback: number | null | undefined
+    ): number => {
+        if (Array.isArray(nested)) {
+            if (nested.length > 0 && typeof nested[0] === "object" && nested[0] !== null && "count" in nested[0]) {
+                return Number((nested[0] as { count: number }).count) || 0;
+            }
+            if (nested.length === 0) return 0;
+        }
+        return typeof fallback === "number" ? fallback : 0;
+    };
+    const likeCount = readCount(p.forum_likes, p.likes);
+    const favCount = readCount(p.forum_favorites, p.favorites);
+    // 回复数：list 下 forum_replies 是 [{count}] 聚合；detail 下是行数组（用长度）；后端显式 replyCount 兜底
+    let replyCount: number;
+    if (
+        Array.isArray(p.forum_replies) &&
+        p.forum_replies.length > 0 &&
+        typeof p.forum_replies[0] === "object" &&
+        p.forum_replies[0] !== null &&
+        "count" in p.forum_replies[0]
+    ) {
+        replyCount = Number((p.forum_replies[0] as { count: number }).count) || 0;
+    } else {
+        replyCount = topReplies.length;
+    }
     return {
         id: p.id,
         title: p.title,
@@ -204,17 +225,17 @@ function mapApiPostToPost(p: ApiPost): ForumPost {
         author: p.author_name,
         authorAvatar: p.author_name === "官方通知" || p.section === "announce" ? "📢" : "🌽",
         section: p.section,
-        replyCount: p.replyCount ?? p.forum_replies?.[0]?.count ?? parentReplies.length,
+        replyCount,
         viewCount: 0,
         createdAt: formatTime(p.created_at),
-        lastReplyAt: formatTime(p.last_reply_at || p.updated_at),
+        lastReplyAt: formatTime(p.updated_at),
         status: p.deleted_at ? "deleted" : "normal",
         isEssence: p.is_essence,
         isPinned: p.is_pinned,
         isLocked: false,
         replies: parentReplies,
-        likes: p.likes ?? p.forum_likes?.[0]?.count ?? 0,
-        favorites: p.favorites ?? 0,
+        likes: likeCount,
+        favorites: favCount,
         bugStatus: p.bug_status,
     };
 }
@@ -241,180 +262,16 @@ async function fetchForumPostDetail(postId: string): Promise<ForumPost | null> {
     return mapApiPostToPost(res.data as ApiPost);
 }
 
-// ============ Mock 数据 ============
-const MOCK_SECTIONS: ForumSection[] = [
-    { id: "creative", icon: "🎨", name: "同人创作", desc: "文字描述、创作讨论", postCount: 128 },
-    { id: "cp", icon: "💬", name: "CP讨论", desc: "日常嗑糖、剧情讨论", postCount: 256 },
-    { id: "fanfic", icon: "", name: "同人文", desc: "粉丝创作的故事", postCount: 89 },
-    { id: "event", icon: "🏆", name: "活动专区", desc: "比赛投票", postCount: 24 },
-    { id: "announce", icon: "📢", name: "公告板", desc: "仅管理员可发帖", postCount: 12 },
-    { id: "bug-report", icon: "🐛", name: "Bug反馈", desc: "提交bug与功能建议", postCount: 0 }
+// ============ 板块定义 ============
+const BUILTIN_SECTIONS: ForumSection[] = [
+    { id: "creative", icon: "🎨", name: "同人创作", desc: "文字描述、创作讨论" },
+    { id: "cp", icon: "💬", name: "CP讨论", desc: "日常嗑糖、剧情讨论" },
+    { id: "fanfic", icon: "", name: "同人文", desc: "粉丝创作的故事" },
+    { id: "event", icon: "🏆", name: "活动专区", desc: "比赛投票" },
+    { id: "announce", icon: "📢", name: "公告板", desc: "仅管理员可发帖" },
+    { id: "bug-report", icon: "🐛", name: "Bug反馈", desc: "提交bug与功能建议" }
 ];
 
-const MOCK_POSTS: ForumPost[] = [
-    {
-        id: "p1",
-        title: "【置顶】【公告】社区规范 v2.0 请仔细阅读",
-        content: "欢迎各位甜玉米来到社区论坛！\n\n为了维护良好的讨论环境，请大家遵守以下规范：\n1. 禁止人身攻击、恶意引战\n2. 禁止发布广告、spam 内容\n3. 尊重他人创作，转载需注明出处\n4. 管理员有权删除违规内容\n\n感谢大家的配合！",
-        author: "管理员",
-        authorAvatar: "👑",
-        section: "announce",
-        replyCount: 45,
-        viewCount: 1280,
-        createdAt: "2024-01-01 10:00",
-        lastReplyAt: "2024-01-15 14:30",
-        status: "normal",
-        likes: 128,
-        favorites: 56,
-        isEssence: true,
-        isPinned: true,
-        isLocked: true,
-        replies: [
-            {
-                id: "r1",
-                postId: "p1",
-                content: "收到！会严格遵守社区规范的～",
-                author: "甜玉米1号",
-                authorAvatar: "🌽",
-                createdAt: "2024-01-01 10:30",
-                isPinned: false,
-                isDeleted: false,
-                subReplies: [
-                    {
-                        id: "sr1",
-                        replyId: "r1",
-                        content: "欢迎新人！",
-                        author: "管理员",
-                        authorAvatar: "",
-                        createdAt: "2024-01-01 11:00",
-                        replyTo: "甜玉米1号"
-                    }
-                ]
-            }
-        ]
-    },
-    {
-        id: "p2",
-        title: "田栩宁和梓渝的100个甜蜜瞬间（持续更新）",
-        content: "开这个帖子是为了记录田栩宁和梓渝的甜蜜瞬间！\n\n1. 第一次见面时田栩宁主动帮梓渝拿行李\n2. 梓渝生病时田栩宁整夜照顾\n3. 两人一起做饭时田栩宁从背后抱住梓渝\n4. 梓渝给田栩宁织围巾，虽然织得歪歪扭扭\n5. 田栩宁偷偷给梓渝准备惊喜生日派对\n...\n\n大家还有什么补充的欢迎评论！",
-        author: "糖小能手",
-        authorAvatar: "🍬",
-        section: "cp",
-        replyCount: 234,
-        viewCount: 5680,
-        createdAt: "2024-01-10 09:00",
-        lastReplyAt: "2024-01-15 16:45",
-        status: "normal",
-        likes: 356,
-        favorites: 128,
-        isEssence: true,
-        isPinned: false,
-        isLocked: false,
-        replies: [
-            {
-                id: "r2",
-                postId: "p2",
-                content: "补充一个！上次直播时田栩宁看梓渝的眼神真的绝了，满满的爱意都要溢出来了",
-                author: "显微镜女孩",
-                authorAvatar: "🔍",
-                createdAt: "2024-01-10 10:30",
-                isPinned: false,
-                isDeleted: false,
-                subReplies: [
-                    {
-                        id: "sr2",
-                        replyId: "r2",
-                        content: "对对对！我也注意到了，当时我就截图了",
-                        author: "嗑糖小能手",
-                        authorAvatar: "🍬",
-                        createdAt: "2024-01-10 11:00",
-                        replyTo: "显微镜女孩"
-                    }
-                ]
-            },
-            {
-                id: "r3",
-                postId: "p2",
-                content: "还有那次采访，主持人问梓渝最喜欢田栩宁什么，梓渝说\"全部\"，田栩宁脸都红了哈哈",
-                author: "CP粉头",
-                authorAvatar: "💕",
-                createdAt: "2024-01-11 14:20",
-                isPinned: false,
-                isDeleted: false,
-                subReplies: []
-            }
-        ]
-    },
-    {
-        id: "p3",
-        title: "【同人】《逆光》续写 - 如果那天他们没有错过",
-        content: "如果那天他们没有错过...\n\n田栩宁站在机场大厅，看着梓渝的背影消失在人群中。他的手紧紧攥着那张机票，指节发白。\n\n\"梓渝...\"他低声呢喃，声音被机场的喧嚣淹没。\n\n如果当时他追上去，如果当时他说出那句话，如果...\n\n可是没有如果。\n\n三年后，田栩宁在一家咖啡馆偶遇梓渝。对方瘦了，也成熟了，但那双眼睛依然清澈。\n\n\"好久不见。\"梓渝微笑着说。\n\n田栩宁的心跳漏了一拍。三年了，他以为自己已经放下了，但在看到梓渝的那一刻，所有的感情都涌了上来。\n\n\"好久不见。\"他听到自己说。\n\n（未完待续）",
-        author: "文笔担当",
-        authorAvatar: "️",
-        section: "fanfic",
-        replyCount: 67,
-        viewCount: 2340,
-        createdAt: "2024-01-12 20:00",
-        lastReplyAt: "2024-01-15 12:00",
-        status: "normal",
-        likes: 89,
-        favorites: 34,
-        isEssence: false,
-        isPinned: false,
-        isLocked: false,
-        replies: [
-            {
-                id: "r4",
-                postId: "p3",
-                content: "文笔太好了！求更新！",
-                author: "催更小能手",
-                authorAvatar: "⏰",
-                createdAt: "2024-01-12 21:00",
-                isPinned: false,
-                isDeleted: false,
-                subReplies: []
-            }
-        ]
-    },
-    {
-        id: "p4",
-        title: "大家觉得田栩宁和梓渝什么时候会官宣？",
-        content: "如题，我赌今年之内！\n\n理由：\n1. 两人最近互动越来越频繁\n2. 田栩宁微博发的\"某人\"明显是指梓渝\n3. 梓渝新歌 MV 田栩宁友情出演\n4. 两人粉丝都在催官宣\n\n大家觉得呢？",
-        author: "理性分析帝",
-        authorAvatar: "",
-        section: "cp",
-        replyCount: 156,
-        viewCount: 4560,
-        createdAt: "2024-01-13 15:00",
-        lastReplyAt: "2024-01-15 18:30",
-        status: "normal",
-        likes: 245,
-        favorites: 78,
-        isEssence: false,
-        isPinned: false,
-        isLocked: false,
-        replies: []
-    },
-    {
-        id: "p5",
-        title: "【绘画】画了一张田栩宁和梓渝的 Q 版图",
-        content: "第一次画 CP 图，画得不好请见谅～\n\n画的是两人一起做饭的场景，田栩宁从背后抱住梓渝，梓渝在炒菜，锅里还冒着热气。\n\n希望大家喜欢！",
-        author: "画画小能手",
-        authorAvatar: "🎨",
-        section: "creative",
-        replyCount: 89,
-        viewCount: 3210,
-        createdAt: "2024-01-14 10:00",
-        lastReplyAt: "2024-01-15 20:00",
-        status: "normal",
-        likes: 167,
-        favorites: 56,
-        isEssence: false,
-        isPinned: false,
-        isLocked: false,
-        replies: []
-    }
-];
 
 // ============ 论坛组件 ============
 interface ForumAppProps {
@@ -428,44 +285,7 @@ export function ForumApp({ onClose, isAdmin = false, loginUsername = "", onViewU
     const [view, setView] = useState<"sections" | "posts" | "postDetail" | "newPost" | "search">("sections");
     const [currentSection, setCurrentSection] = useState<string | null>(null);
     const [currentPost, setCurrentPost] = useState<ForumPost | null>(null);
-    const [posts, setPosts] = useState<ForumPost[]>(() => {
-        if (typeof window === "undefined") return MOCK_POSTS;
-        const saved = loadPosts();
-        if (saved.length > 0) return saved;
-        // 迁移旧的官方通知和 Bug 反馈数据
-        try {
-            const notices: Array<{ id: string; title: string; content: string; author: string; createdBy: string; createdAt: string }> = JSON.parse(localStorage.getItem("forum_official_notices") || "[]");
-            const bugs: ForumPost[] = JSON.parse(localStorage.getItem("forum_bug_reports") || "[]");
-            const migrated: ForumPost[] = [
-                ...notices.map(n => ({
-                    id: `notice_${n.id}`,
-                    title: n.title,
-                    content: n.content,
-                    author: n.author || "官方通知",
-                    authorAvatar: "📢",
-                    section: "announce",
-                    replyCount: 0,
-                    viewCount: 0,
-                    createdAt: typeof n.createdAt === "string" ? n.createdAt.replace("T", " ").slice(0, 16) : new Date().toLocaleString("zh-CN"),
-                    lastReplyAt: typeof n.createdAt === "string" ? n.createdAt.replace("T", " ").slice(0, 16) : new Date().toLocaleString("zh-CN"),
-                    status: "normal" as const,
-                    isEssence: true,
-                    isPinned: true,
-                    isLocked: false,
-                    replies: [],
-                    likes: 0,
-                    favorites: 0
-                })),
-                ...bugs.map(b => ({ ...b, bugStatus: b.bugStatus || "pending" }))
-            ];
-            if (migrated.length > 0) {
-                return [...MOCK_POSTS, ...migrated];
-            }
-        } catch {
-            // ignore
-        }
-        return MOCK_POSTS;
-    });
+    const [posts, setPosts] = useState<ForumPost[]>([]);
     const [sortBy, setSortBy] = useState<"latest" | "hot" | "essence">("latest");
     const [isLoading, setIsLoading] = useState(false);
     const [apiError, setApiError] = useState<string | null>(null);
@@ -519,7 +339,7 @@ export function ForumApp({ onClose, isAdmin = false, loginUsername = "", onViewU
 
     // 板块列表（支持管理员创建自定义板块）
     const [customSections, setCustomSections] = useState<ForumSection[]>(() => loadCustomSections());
-    const sections = useMemo(() => [...MOCK_SECTIONS, ...customSections], [customSections]);
+    const sections = useMemo(() => [...BUILTIN_SECTIONS, ...customSections], [customSections]);
     const [showSectionForm, setShowSectionForm] = useState(false);
     const [newSectionName, setNewSectionName] = useState("");
     const [newSectionDesc, setNewSectionDesc] = useState("");
@@ -529,19 +349,22 @@ export function ForumApp({ onClose, isAdmin = false, loginUsername = "", onViewU
     const [showRewardForm, setShowRewardForm] = useState(false);
     const [rewardAmount, setRewardAmount] = useState("");
     const [rewardMessage, setRewardMessage] = useState("");
-    const [rewardAdminMode, setRewardAdminMode] = useState(false);
 
     // 发布官方通知（仅admin）
     const handlePublishNotice = async () => {
         const title = newNoticeTitle.trim();
         const content = newNoticeContent.trim();
-        if (!title || !content) return;
+        if (!title || !content) {
+            setApiError("请先填写公告标题和内容");
+            return;
+        }
         const token = getAuthToken();
         if (!token) {
             alert("请先登录");
             return;
         }
         setIsLoading(true);
+        setApiError(null);
         try {
             const res = await forumApi("create", {
                 title: `【官方公告】${title}`,
@@ -561,7 +384,7 @@ export function ForumApp({ onClose, isAdmin = false, loginUsername = "", onViewU
             setShowNoticeForm(false);
             setApiError(null);
         } catch (err) {
-            setApiError(err instanceof Error ? err.message : "发布公告失败");
+            setApiError(err instanceof Error ? err.message : "发布公告失败，请检查网络后重试");
         } finally {
             setIsLoading(false);
         }
@@ -582,8 +405,7 @@ export function ForumApp({ onClose, isAdmin = false, loginUsername = "", onViewU
             id,
             icon: newSectionIcon || "📁",
             name,
-            desc: desc || "社区板块",
-            postCount: 0
+            desc: desc || "社区板块"
         };
         setCustomSections(prev => [...prev, section]);
         setNewSectionName("");
@@ -598,7 +420,7 @@ export function ForumApp({ onClose, isAdmin = false, loginUsername = "", onViewU
         const post = posts.find(p => p.id === postId);
         if (!post) return;
         try {
-            const res = await forumApi("feature", { postId, featured: !post.isEssence });
+            const res = await forumApi("admin_essence", { postId, value: !post.isEssence });
             if (!res.success) {
                 setApiError(res.error || "加精失败");
                 return;
@@ -614,32 +436,25 @@ export function ForumApp({ onClose, isAdmin = false, loginUsername = "", onViewU
         }
     };
 
-    // 打赏/奖励作者米米币
-    const handleReward = (isAdminReward = false) => {
+    // 打赏作者米米币
+    const handleReward = () => {
         if (!currentPost) return;
         const amount = Number(rewardAmount);
         if (!amount || amount <= 0) {
             setRewardMessage("请输入有效金额");
             return;
         }
-        const from = isAdminReward ? "system" : (loginUsername || "guest");
+        const from = loginUsername || "guest";
         const to = currentPost.author;
-        if (!isAdminReward && from === to) {
+        if (from === to) {
             setRewardMessage("不能打赏自己");
             return;
         }
-        if (isAdminReward) {
-            // 管理员奖励：系统发放
-            saveCoins(to, loadCoins(to) + amount);
-            setRewardMessage(`已奖励作者 ${amount} 米米币`);
+        if (transferCoins(from, to, amount)) {
+            setRewardMessage(`打赏成功，已转给作者 ${amount} 米米币`);
         } else {
-            // 用户打赏
-            if (transferCoins(from, to, amount)) {
-                setRewardMessage(`打赏成功，已转给作者 ${amount} 米米币`);
-            } else {
-                setRewardMessage("米米币不足");
-                return;
-            }
+            setRewardMessage("米米币不足");
+            return;
         }
         setTimeout(() => {
             setShowRewardForm(false);
@@ -722,15 +537,7 @@ export function ForumApp({ onClose, isAdmin = false, loginUsername = "", onViewU
             try {
                 const data = await fetchForumPosts();
                 if (!cancelled) {
-                    if (data.length > 0) {
-                        setPosts(prev => {
-                            const map = new Map(data.map((p) => [p.id, p]));
-                            prev.forEach((p) => {
-                                if (!map.has(p.id)) map.set(p.id, p);
-                            });
-                            return Array.from(map.values()).sort((a, b) => Number(b.isPinned) - Number(a.isPinned) || new Date(b.lastReplyAt).getTime() - new Date(a.lastReplyAt).getTime());
-                        });
-                    }
+                    setPosts(data);
                     setIsOffline(false);
                 }
             } catch (err) {
@@ -829,8 +636,14 @@ export function ForumApp({ onClose, isAdmin = false, loginUsername = "", onViewU
 
     // 发帖
     const handleCreatePost = useCallback(async () => {
-        if (!newPostTitle.trim() || !newPostContent.trim() || !newPostSection) return;
-        if (newPostSection === "announce" && !isAdmin) return;
+        if (!newPostTitle.trim() || !newPostContent.trim() || !newPostSection) {
+            setApiError("请选择板块并填写标题和内容");
+            return;
+        }
+        if (newPostSection === "announce" && !isAdmin) {
+            setApiError("只有管理员能在公告板发帖");
+            return;
+        }
         const token = getAuthToken();
         if (!token) {
             alert("请先登录");
@@ -838,6 +651,7 @@ export function ForumApp({ onClose, isAdmin = false, loginUsername = "", onViewU
         }
 
         setIsLoading(true);
+        setApiError(null);
         try {
             const res = await forumApi("create", {
                 title: newPostTitle.trim(),
@@ -886,7 +700,11 @@ export function ForumApp({ onClose, isAdmin = false, loginUsername = "", onViewU
                 return;
             }
             if (shouldUpdateBugStatus) {
-                await forumApi("set_bug_status", { postId: currentPost.id, bugStatus: newBugStatus });
+                const bugRes = await forumApi("admin_update_bug_status", { postId: currentPost.id, value: newBugStatus });
+                if (!bugRes.success) {
+                    setApiError(bugRes.error || "更新Bug状态失败");
+                    return;
+                }
             }
             const fresh = await fetchForumPostDetail(currentPost.id);
             if (fresh) {
@@ -910,47 +728,45 @@ export function ForumApp({ onClose, isAdmin = false, loginUsername = "", onViewU
         setReplyToAuthor(replyToAuthor);
     };
 
-    // 提交楼中楼回复
-    const handleSubmitSubReply = useCallback(() => {
-        if (!replyContent.trim() || !currentPost || !replyToReplyId) return;
-
-        const now = new Date().toLocaleString("zh-CN");
-        const newSubReply: ForumSubReply = {
-            id: `sr${crypto.randomUUID()}`,
-            replyId: replyToReplyId,
-            content: replyContent,
-            author: "我",
-            authorAvatar: "",
-            createdAt: now,
-            replyTo: replyToAuthor
-        };
-
-        const updatedPosts = posts.map(p => {
-            if (p.id === currentPost.id) {
-                return {
-                    ...p,
-                    replies: p.replies.map(r => {
-                        if (r.id === replyToReplyId) {
-                            return {
-                                ...r,
-                                subReplies: [...r.subReplies, newSubReply]
-                            };
-                        }
-                        return r;
-                    }),
-                    replyCount: p.replyCount + 1,
-                    lastReplyAt: now
-                };
+    // 提交楼中楼回复（真实入库，parentReplyId 挂到对应父回复）
+    const handleSubmitSubReply = useCallback(async () => {
+        if (!currentPost || !replyToReplyId) return;
+        const content = replyContent.trim();
+        if (!content) {
+            setApiError("回复内容不能为空");
+            return;
+        }
+        const token = typeof window !== "undefined" ? localStorage.getItem("auth_token") : null;
+        if (!token) {
+            alert("请先登录");
+            return;
+        }
+        setApiError(null);
+        setIsLoading(true);
+        try {
+            const res = await forumApi("reply", {
+                postId: currentPost.id,
+                content,
+                parentReplyId: replyToReplyId,
+            });
+            if (!res.success) {
+                setApiError(res.error || "回复失败");
+                return;
             }
-            return p;
-        });
-
-        setPosts(updatedPosts);
-        setCurrentPost(updatedPosts.find(p => p.id === currentPost.id) || null);
-        setReplyContent("");
-        setReplyToReplyId(null);
-        setReplyToAuthor("");
-    }, [replyContent, currentPost, replyToReplyId, replyToAuthor, posts]);
+            const fresh = await fetchForumPostDetail(currentPost.id);
+            if (fresh) {
+                setPosts(prev => prev.map(p => p.id === fresh.id ? fresh : p));
+                setCurrentPost(fresh);
+            }
+            setReplyContent("");
+            setReplyToReplyId(null);
+            setReplyToAuthor("");
+        } catch (err) {
+            setApiError(err instanceof Error ? err.message : "回复失败，请检查网络后重试");
+        } finally {
+            setIsLoading(false);
+        }
+    }, [replyContent, currentPost, replyToReplyId]);
 
     // 删除评论（楼主）
     const handleDeleteReply = (replyId: string) => {
@@ -999,12 +815,10 @@ export function ForumApp({ onClose, isAdmin = false, loginUsername = "", onViewU
         setCurrentPost(updatedPosts.find(p => p.id === currentPost.id) || null);
     };
 
-    // 举报
+    // 举报：后端举报中心尚未上线，先诚实提示，避免假装成功
     const handleReport = () => {
         if (!reportPostId || !reportType || !reportDesc.trim()) return;
-
-        // TODO: 调用举报 API
-        alert("举报成功，管理员会尽快处理");
+        alert("举报功能即将上线，暂未提交。紧急情况请直接联系管理员。");
         setReportPostId(null);
         setReportType("");
         setReportDesc("");
@@ -1164,17 +978,18 @@ export function ForumApp({ onClose, isAdmin = false, loginUsername = "", onViewU
                         />
                         <button
                             onClick={handlePublishNotice}
+                            disabled={isLoading}
                             style={{
                                 width: "100%",
                                 padding: "10px",
-                                background: "#2e7d32",
+                                background: isLoading ? "#9e9e9e" : "#2e7d32",
                                 color: "#fff",
                                 border: "none",
                                 borderRadius: 8,
                                 fontSize: 14,
-                                cursor: "pointer"
+                                cursor: isLoading ? "not-allowed" : "pointer"
                             }}>
-                            发布置顶通知
+                            {isLoading ? "发布中…" : "发布置顶通知"}
                         </button>
                     </div>
                 </div>
@@ -1267,7 +1082,7 @@ export function ForumApp({ onClose, isAdmin = false, loginUsername = "", onViewU
                     </div>
                 )}
 
-                {[...MOCK_SECTIONS, ...customSections].map(section => (
+                {sections.map(section => (
                     <div
                         key={section.id}
                         onClick={() => {
@@ -1307,7 +1122,7 @@ export function ForumApp({ onClose, isAdmin = false, loginUsername = "", onViewU
                             padding: "4px 10px",
                             borderRadius: 12,
                             fontWeight: 500
-                        }}>{section.postCount} 帖</div>
+                        }}>{posts.filter(p => p.section === section.id && p.status === "normal").length} 帖</div>
                     </div>
                 ))}
             </div>
@@ -1567,7 +1382,7 @@ export function ForumApp({ onClose, isAdmin = false, loginUsername = "", onViewU
                                 onClick={async () => {
                                     if (!confirm("确定删除该帖子？")) return;
                                     try {
-                                        const res = await forumApi("delete", { postId: currentPost.id });
+                                        const res = await forumApi("admin_delete", { postId: currentPost.id });
                                         if (!res.success) {
                                             setApiError(res.error || "删除失败");
                                             return;
@@ -1711,22 +1526,9 @@ export function ForumApp({ onClose, isAdmin = false, loginUsername = "", onViewU
                                         cursor: "pointer"
                                     }}>{currentPost.isEssence ? "⭐ 取消精华" : "⭐ 设为精华"}</button>
                             )}
-                            {isAdmin && (
-                                <button
-                                    onClick={() => { setShowRewardForm(true); setRewardAdminMode(true); setRewardAmount(""); setRewardMessage(""); }}
-                                    style={{
-                                        background: "#f5f5f5",
-                                        border: "none",
-                                        borderRadius: 8,
-                                        padding: "6px 12px",
-                                        fontSize: 13,
-                                        color: "#6b7280",
-                                        cursor: "pointer"
-                                    }}>🎁 奖励作者</button>
-                            )}
                             {loginUsername && loginUsername !== currentPost.author && (
                                 <button
-                                    onClick={() => { setShowRewardForm(true); setRewardAdminMode(false); setRewardAmount(""); setRewardMessage(""); }}
+                                    onClick={() => { setShowRewardForm(true); setRewardAmount(""); setRewardMessage(""); }}
                                     style={{
                                         background: "#fff7ed",
                                         border: "none",
@@ -1994,11 +1796,11 @@ export function ForumApp({ onClose, isAdmin = false, loginUsername = "", onViewU
                             maxWidth: 360
                         }}>
                             <div style={{ fontSize: 17, fontWeight: 700, marginBottom: 12 }}>
-                                {rewardAdminMode ? "🎁 奖励作者米米币" : "🍬 打赏作者"}
+                                🍬 打赏作者
                             </div>
                             <div style={{ fontSize: 13, color: "#6b7280", marginBottom: 16 }}>
                                 作者：<strong>{currentPost.author}</strong>
-                                {!rewardAdminMode && loginUsername && (
+                                {loginUsername && (
                                     <div style={{ marginTop: 4 }}>我的余额：{loadCoins(loginUsername)} 米米币</div>
                                 )}
                             </div>
@@ -2053,7 +1855,7 @@ export function ForumApp({ onClose, isAdmin = false, loginUsername = "", onViewU
                                         cursor: "pointer"
                                     }}>取消</button>
                                 <button
-                                    onClick={() => handleReward(rewardAdminMode)}
+                                    onClick={() => handleReward()}
                                     style={{
                                         flex: 1,
                                         padding: 12,
@@ -2064,7 +1866,7 @@ export function ForumApp({ onClose, isAdmin = false, loginUsername = "", onViewU
                                         fontSize: 14,
                                         fontWeight: 600,
                                         cursor: "pointer"
-                                    }}>确认{rewardAdminMode ? "奖励" : "打赏"}</button>
+                                    }}>确认打赏</button>
                             </div>
                         </div>
                     </div>
@@ -2320,11 +2122,11 @@ export function ForumApp({ onClose, isAdmin = false, loginUsername = "", onViewU
             <div style={{ padding: "12px 16px", background: "#fff", borderTop: "1px solid #f0f0f0" }}>
                 <button
                     onClick={handleCreatePost}
-                    disabled={!newPostTitle.trim() || !newPostContent.trim() || !newPostSection}
+                    disabled={!newPostTitle.trim() || !newPostContent.trim() || !newPostSection || isLoading}
                     style={{
                         width: "100%",
                         padding: 14,
-                        background: (!newPostTitle.trim() || !newPostContent.trim() || !newPostSection)
+                        background: (!newPostTitle.trim() || !newPostContent.trim() || !newPostSection || isLoading)
                             ? "#d1d5db"
                             : "linear-gradient(135deg, #f97316 0%, #fb923c 100%)",
                         color: "#fff",
@@ -2332,8 +2134,8 @@ export function ForumApp({ onClose, isAdmin = false, loginUsername = "", onViewU
                         borderRadius: 12,
                         fontSize: 15,
                         fontWeight: 600,
-                        cursor: (!newPostTitle.trim() || !newPostContent.trim() || !newPostSection) ? "not-allowed" : "pointer"
-                    }}>发布帖子</button>
+                        cursor: (!newPostTitle.trim() || !newPostContent.trim() || !newPostSection || isLoading) ? "not-allowed" : "pointer"
+                    }}>{isLoading ? "发布中…" : "发布帖子"}</button>
             </div>
         </div>
     );
@@ -2533,18 +2335,48 @@ export function ForumApp({ onClose, isAdmin = false, loginUsername = "", onViewU
     };
 
     // ============ 主渲染 ============
-    switch (view) {
-        case "sections":
-            return renderSections();
-        case "posts":
-            return renderPosts();
-        case "postDetail":
-            return renderPostDetail();
-        case "newPost":
-            return renderNewPost();
-        case "search":
-            return renderSearch();
-        default:
-            return renderSections();
-    }
+    const content = (() => {
+        switch (view) {
+            case "sections":
+                return renderSections();
+            case "posts":
+                return renderPosts();
+            case "postDetail":
+                return renderPostDetail();
+            case "newPost":
+                return renderNewPost();
+            case "search":
+                return renderSearch();
+            default:
+                return renderSections();
+        }
+    })();
+
+    return (
+        <>
+            {content}
+            {apiError && (
+                <div
+                    onClick={() => setApiError(null)}
+                    style={{
+                        position: "fixed",
+                        left: 16,
+                        right: 16,
+                        bottom: 24,
+                        zIndex: 3000,
+                        background: "rgba(220,38,38,0.96)",
+                        color: "#fff",
+                        padding: "12px 14px",
+                        borderRadius: 10,
+                        fontSize: 13,
+                        lineHeight: 1.5,
+                        boxShadow: "0 6px 20px rgba(0,0,0,0.25)",
+                        cursor: "pointer",
+                        wordBreak: "break-word",
+                    }}>
+                    ⚠️ {apiError}（点击关闭）
+                </div>
+            )}
+        </>
+    );
 }
