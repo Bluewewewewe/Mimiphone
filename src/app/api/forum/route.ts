@@ -112,9 +112,8 @@ export async function POST(request: NextRequest) {
       }
       const { data: post, error } = await supabase
         .from("forum_posts")
-        .select(
-          "*, forum_replies(*, order:created_at.asc()), forum_likes(count), forum_favorites(count)"
-        )
+        .select("*, forum_replies(*), forum_likes(count), forum_favorites(count)")
+        .order("created_at", { foreignTable: "forum_replies" })
         .is("deleted_at", null)
         .eq("id", postId)
         .single();
