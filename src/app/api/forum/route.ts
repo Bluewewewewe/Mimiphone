@@ -1,9 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import getSupabaseClient from "@/storage/database/supabase-client";
 import {
-  requireAuthRequest,
-  requirePermissionRequest,
+  requireAuth,
+  requireAdmin,
+  hasPermission,
   logAudit,
+  type VerifiedUser,
+  type AdminPermission,
 } from "@/lib/auth";
 import { rateLimit } from "@/lib/rate-limit";
 
@@ -30,7 +33,24 @@ function badRequest(message: string) {
   return NextResponse.json({ success: false, error: message }, { status: 400 });
 }
 
-function checkBanForForum(user: Awaited<ReturnType<typeof requireAuthRequest>>): NextResponse | null {
+function bodyToken(body: any): string | undefined {
+  const t = body?.authToken ?? body?.token;
+  return typeof t === "string" ? t : undefined;
+}
+
+function requireForumAuth(body: any): Promise<VerifiedUser> {
+  return requireAuth(bodyToken(body));
+}
+
+async function requireForumPermission(body: any, permission: AdminPermission): Promise<VerifiedUser> {
+  const user = await requireAdmin(bodyToken(body));
+  if (!hasPermission(user, permission)) {
+    throw new Error(`缺少权限：${permission}`);
+  }
+  return user;
+}
+
+function checkBanForForum(user: VerifiedUser): NextResponse | null {
   const banStatus = user.banStatus;
   const banUntil = user.banUntil;
   if (banStatus === "temp_banned" && banUntil) {
@@ -136,7 +156,7 @@ export async function POST(request: NextRequest) {
     }
 
     if (action === "create") {
-      const user = await requireAuthRequest(request);
+      const user = await requireForumAuth(body);
       const banCheck = checkBanForForum(user);
       if (banCheck) return banCheck;
       const { title, content, section } = body;
@@ -156,7 +176,7 @@ export async function POST(request: NextRequest) {
       const sectionId = typeof section === "string" ? section : "general";
       // 公告板块仅管理员可发；非法板块一律拒绝（防止幽灵帖/冒名板块）
       if (ADMIN_ONLY_SECTIONS.has(sectionId)) {
-        await requirePermissionRequest(request, "forum_manage");
+        await requireForumPermission(body, "forum_manage");
       }
       // 自定义板块尚未数据库化，这里只放行内置白名单；forum_sections 上线后合并校验
       if (!BUILTIN_SECTIONS.has(sectionId)) {
@@ -184,7 +204,7 @@ export async function POST(request: NextRequest) {
     }
 
     if (action === "reply") {
-      const user = await requireAuthRequest(request);
+      const user = await requireForumAuth(body);
       const banCheck = checkBanForForum(user);
       if (banCheck) return banCheck;
       const { postId, content, parentReplyId } = body;
@@ -262,7 +282,7 @@ export async function POST(request: NextRequest) {
     }
 
     if (action === "like") {
-      const user = await requireAuthRequest(request);
+      const user = await requireForumAuth(body);
       const banCheck = checkBanForForum(user);
       if (banCheck) return banCheck;
       const { postId } = body;
@@ -285,7 +305,7 @@ export async function POST(request: NextRequest) {
     }
 
     if (action === "favorite") {
-      const user = await requireAuthRequest(request);
+      const user = await requireForumAuth(body);
       const banCheck = checkBanForForum(user);
       if (banCheck) return banCheck;
       const { postId } = body;
@@ -308,7 +328,7 @@ export async function POST(request: NextRequest) {
     }
 
     if (action === "my_favorites") {
-      const user = await requireAuthRequest(request);
+      const user = await requireForumAuth(body);
       const { data, error } = await supabase
         .from("forum_favorites")
         .select("post_id, forum_posts(*)")
@@ -320,7 +340,7 @@ export async function POST(request: NextRequest) {
     }
 
     if (action === "admin_pin" || action === "admin_essence") {
-      const adminUser = await requirePermissionRequest(request, "forum_manage");
+      const adminUser = await requireForumPermission(body, "forum_manage");
       const { postId, value } = body;
       const field = action === "admin_pin" ? "is_pinned" : "is_essence";
       const { data, error } = await supabase
@@ -335,7 +355,7 @@ export async function POST(request: NextRequest) {
     }
 
     if (action === "admin_delete") {
-      const adminUser = await requirePermissionRequest(request, "forum_manage");
+      const adminUser = await requireForumPermission(body, "forum_manage");
       const { postId } = body;
       if (typeof postId !== "string" || !UUID_RE.test(postId)) {
         return badRequest("帖子ID无效");
@@ -352,7 +372,7 @@ export async function POST(request: NextRequest) {
     }
 
     if (action === "admin_update_bug_status") {
-      const adminUser = await requirePermissionRequest(request, "forum_manage");
+      const adminUser = await requireForumPermission(body, "forum_manage");
       const { postId, value } = body;
       const bugStatus = value;
       const { data, error } = await supabase
