@@ -400,10 +400,10 @@ function wsCarouselModeLabel() {
     return `${n}自定义+${w}想要榜`;
 }
 
-function wsReadFileAsDataURL(input, cb) {
+function wsReadFileAsDataURL(input, kind, cb) {
     if (!input.files?.[0]) return;
     // 优先使用 API 上传到对象存储，失败则回退到 base64
-    apiUploadImage(input.files[0])
+    apiUploadImage(input.files[0], kind)
         .then((url) => cb(url))
         .catch((err) => {
             console.warn("图片上传失败，回退到本地存储:", err);
@@ -1007,7 +1007,7 @@ async function wsSubmitList() {
         contactImage: wsListDraft.contactImage,
         hasQuestion: hasQa,
         question: hasQa ? document.getElementById("wsListQuestion").value.trim() : "",
-        answer: hasQa ? document.getElementById("wsListAnswer").value.trim()
+        answer: hasQa ? document.getElementById("wsListAnswer").value.trim() : ""
     };
 
     try {

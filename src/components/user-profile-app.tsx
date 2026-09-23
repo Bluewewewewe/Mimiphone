@@ -128,10 +128,23 @@ export default function UserProfileApp({ username, isSelf = false, bio = "", onC
   const [coins, setCoins] = useState<number>(1000);
   const [inviteCodes, setInviteCodes] = useState<InviteCodeItem[]>([]);
   const [copiedCode, setCopiedCode] = useState<string | null>(null);
+  const [avatarUrl, setAvatarUrl] = useState<string>("");
+  const [uploading, setUploading] = useState<boolean>(false);
 
   useEffect(() => {
     let cancelled = false;
     async function load() {
+      try {
+        const res = await fetch("/api/auth", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ action: "get_profile", username }),
+        });
+        const json = await res.json() as { success?: boolean; profile?: { avatarUrl?: string } };
+        if (!cancelled && json.success && json.profile) setAvatarUrl(json.profile.avatarUrl || "");
+      } catch {
+        // ignore
+      }
       const data = await fetchAllForumPosts();
       const token = typeof window !== "undefined" ? localStorage.getItem("auth_token") : null;
       let codes: InviteCodeItem[] = [];
@@ -177,6 +190,42 @@ export default function UserProfileApp({ username, isSelf = false, bio = "", onC
 
   const isTeacher = false; // TODO: 后续接入真实身份系统
 
+  const handlePickAvatar = () => {
+    const input = document.createElement("input");
+    input.type = "file";
+    input.accept = "image/jpeg,image/png,image/webp,image/gif";
+    input.onchange = async () => {
+      const file = input.files?.[0];
+      if (!file) return;
+      if (file.size > 5 * 1024 * 1024) { alert("图片不能超过 5MB"); return; }
+      const token = localStorage.getItem("auth_token");
+      if (!token) { alert("请先登录"); return; }
+      setUploading(true);
+      try {
+        const fd = new FormData();
+        fd.append("file", file);
+        fd.append("kind", "avatar");
+        fd.append("token", token);
+        const up = await fetch("/api/upload", { method: "POST", body: fd });
+        const upj = await up.json() as { success?: boolean; url?: string; error?: string };
+        if (!upj.success || !upj.url) throw new Error(upj.error || "上传失败");
+        const sv = await fetch("/api/auth", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ action: "update_avatar", authToken: token, avatarUrl: upj.url }),
+        });
+        const svj = await sv.json() as { success?: boolean; error?: string };
+        if (!svj.success) throw new Error(svj.error || "保存失败");
+        setAvatarUrl(upj.url);
+      } catch (e) {
+        alert(e instanceof Error ? e.message : "上传失败");
+      } finally {
+        setUploading(false);
+      }
+    };
+    input.click();
+  };
+
   const renderPostItem = (post: ForumPost) => (
     <div key={post.id} className="bg-white/60 backdrop-blur-md rounded-xl p-3 mb-2 border border-white/40">
       <div className="flex items-center gap-2 mb-1">
@@ -215,9 +264,23 @@ export default function UserProfileApp({ username, isSelf = false, bio = "", onC
       {/* User info */}
       <div className="px-4 py-5 bg-white/50 backdrop-blur-md">
         <div className="flex items-center gap-4">
-          <div className="w-16 h-16 rounded-full bg-gradient-to-br from-primary/30 to-primary/10 flex items-center justify-center text-3xl border-2 border-white/60 shadow-sm">
-            👤
-          </div>
+          <button
+            type="button"
+            onClick={isSelf ? handlePickAvatar : undefined}
+            className={`relative w-16 h-16 rounded-full bg-gradient-to-br from-primary/30 to-primary/10 flex items-center justify-center text-3xl border-2 border-white/60 shadow-sm overflow-hidden shrink-0 ${isSelf ? "cursor-pointer active:scale-95 transition-transform" : "cursor-default"}`}
+            title={isSelf ? (uploading ? "上传中…" : "点击更换头像") : ""}
+          >
+            {avatarUrl ? (
+              <img src={avatarUrl} alt={username} className="w-full h-full object-cover" />
+            ) : (
+              <span>👤</span>
+            )}
+            {isSelf && (
+              <span className="absolute inset-x-0 bottom-0 bg-black/45 text-white text-[9px] leading-tight py-0.5 text-center">
+                {uploading ? "上传中" : "更换"}
+              </span>
+            )}
+          </button>
           <div className="flex-1">
             <h2 className="text-lg font-bold text-foreground">{username}</h2>
             <div className="flex items-center gap-3 mt-1">

@@ -288,6 +288,7 @@ export async function POST(request: NextRequest) {
       currentPassword,
       newPassword,
       newDisplayName,
+      avatarUrl,
       bio,
       count,
       roleType,
@@ -607,6 +608,7 @@ export async function POST(request: NextRequest) {
           weiboName: user.weibo_name,
           weiboLink: user.weibo_link || "",
           userBio: user.user_bio || "",
+          avatarUrl: user.avatar_url || "",
           isAdmin: isAdminUser,
           isDefaultPassword,
           token: newToken,
@@ -645,9 +647,60 @@ export async function POST(request: NextRequest) {
           weiboName: u.weibo_name,
           weiboLink: u.weibo_link || "",
           userBio: u.user_bio || "",
+          avatarUrl: u.avatar_url || "",
           isAdmin: isAdminUser,
         },
       });
+    }
+
+    // ========== 查看公开资料 ==========
+    if (action === "get_profile") {
+      if (!username) {
+        return NextResponse.json({ error: "缺少用户名" }, { status: 400 });
+      }
+      const { data, error } = await supabase
+        .from("users")
+        .select("username, display_name, avatar_url, user_bio")
+        .eq("username", String(username))
+        .maybeSingle();
+      if (error) {
+        return NextResponse.json({ error: error.message }, { status: 500 });
+      }
+      if (!data) {
+        return NextResponse.json({ error: "用户不存在" }, { status: 404 });
+      }
+      return NextResponse.json({
+        success: true,
+        profile: {
+          username: data.username,
+          displayName: data.display_name,
+          avatarUrl: data.avatar_url || "",
+          bio: data.user_bio || "",
+        },
+      });
+    }
+
+    // ========== 更新头像 ==========
+    if (action === "update_avatar") {
+      if (!authToken || avatarUrl === undefined) {
+        return NextResponse.json({ error: "缺少必要参数" }, { status: 400 });
+      }
+      const url = String(avatarUrl).trim();
+      if (url.length > 1000 || (url && !/^https?:\/\//.test(url))) {
+        return NextResponse.json({ error: "头像地址不合法" }, { status: 400 });
+      }
+      const found = await getUserByToken(supabase, authToken as string);
+      if (!found) {
+        return NextResponse.json({ error: "登录已过期" }, { status: 401 });
+      }
+      const { error } = await supabase
+        .from("users")
+        .update({ avatar_url: url })
+        .eq("id", found.user.id);
+      if (error) {
+        return NextResponse.json({ error: "更新失败: " + error.message }, { status: 500 });
+      }
+      return NextResponse.json({ success: true, avatarUrl: url });
     }
 
     // ========== 登出 ==========

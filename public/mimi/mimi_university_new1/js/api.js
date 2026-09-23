@@ -99,9 +99,10 @@ async function apiDelete(path, body) {
 }
 
 /* ========== 图片上传 ========== */
-async function apiUploadImage(file) {
+async function apiUploadImage(file, kind) {
     const formData = new FormData();
     formData.append("file", file);
+    if (kind) formData.append("kind", kind);
     const res = await fetch(`${API_BASE}/api/upload`, {
         method: "POST",
         headers: (() => { const h = {}; const t = apiGetToken(); if (t) h["Authorization"] = "Bearer " + t; return h; })(),

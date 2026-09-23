@@ -603,7 +603,7 @@
             <select id="wsListMinor"></select>
             <label>制品图片</label>
             <div id="wsListImageWrap">
-                <input type="file" accept="image/*" onchange="wsReadFileAsDataURL(this, d=>{wsListDraft.image=d; document.getElementById('wsListImgPrev').src=d;})">
+                <input type="file" accept="image/*" onchange="wsReadFileAsDataURL(this, 'product', d=>{wsListDraft.image=d; document.getElementById('wsListImgPrev').src=d;})">
                 <img id="wsListImgPrev" style="max-width:100%;max-height:120px;margin-top:8px;border-radius:8px;display:block;">
             </div>
             <label>制品介绍（选填）</label>
@@ -613,7 +613,7 @@
         <div id="wsListStep2" class="ws-form-step">
             <label><input type="checkbox" id="wsListHasQa" onchange="wsToggleListQa()"> 设置验证问题（勾选后需填写问题与答案才能展示联系方式）</label>
             <label>联系方式图片（二维码等，可随时在重新上架时更新）</label>
-            <input type="file" accept="image/*" onchange="wsReadFileAsDataURL(this, d=>{wsListDraft.contactImage=d; document.getElementById('wsListContactPrev').src=d;})">
+            <input type="file" accept="image/*" onchange="wsReadFileAsDataURL(this, 'contact', d=>{wsListDraft.contactImage=d; document.getElementById('wsListContactPrev').src=d;})">
             <img id="wsListContactPrev" style="max-width:100%;max-height:120px;margin-top:8px;border-radius:8px;display:block;">
             <div id="wsListQaBlock" class="ws-qa-block" style="display:none;">
                 <p class="ws-qa-hint">请设置购买者需要回答的问题，答对后才显示联系方式。</p>
