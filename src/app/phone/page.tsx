@@ -1998,6 +1998,11 @@ export default function PhonePage() {
     const [accountNewPassword, setAccountNewPassword] = useState("");
     const [accountLoading, setAccountLoading] = useState(false);
     const [accountMessage, setAccountMessage] = useState("");
+    const [profileName, setProfileName] = useState(loginUsername);
+    const [profileAvatar, setProfileAvatar] = useState("");
+    const [profileSaving, setProfileSaving] = useState(false);
+    const [profileMsg, setProfileMsg] = useState("");
+    const [profileUploading, setProfileUploading] = useState(false);
     const [dockAppIds, setDockAppIds] = useState<string[]>(DEFAULT_DOCK_APP_IDS);
     const [isDockReplacing, setIsDockReplacing] = useState(false);
     const [viewingUserProfile, setViewingUserProfile] = useState<string | null>(null);
@@ -2435,7 +2440,7 @@ export default function PhonePage() {
         }
     }, [loginUsername]);
 
-    const [meSubPage, setMeSubPage] = useState<"main" | "settings" | "identity" | "unlock" | "about" | "invite" | "account" | "wallpaper" | "theme" | "change-password" | "knob-style" | "bio" | "redeem">("main");
+    const [meSubPage, setMeSubPage] = useState<"main" | "settings" | "identity" | "unlock" | "about" | "invite" | "account" | "profile" | "wallpaper" | "theme" | "change-password" | "knob-style" | "bio" | "redeem">("main");
     const [identityStep, setIdentityStep] = useState(0);
     const [debugMode, setDebugMode] = useState(false);
     const [debugLevel, setDebugLevel] = useState<number | "all" | null>(null);
@@ -8921,9 +8926,33 @@ export default function PhonePage() {
                             color: "#92400e",
                             marginBottom: 16
                         }}>⚙️ 设置</div>
+                    <div className="me-menu-item" onClick={async () => {
+                        setProfileName(loginUsername);
+                        setProfileMsg("");
+                        setProfileAvatar("");
+                        try {
+                            const res = await fetch("/api/auth", {
+                                method: "POST",
+                                headers: { "Content-Type": "application/json" },
+                                body: JSON.stringify({ action: "get_profile", username: loginUsername }),
+                            });
+                            const json = await res.json() as { success?: boolean; profile?: { displayName?: string; avatarUrl?: string } };
+                            if (json.success && json.profile) {
+                                setProfileName(json.profile.displayName || loginUsername);
+                                setProfileAvatar(json.profile.avatarUrl || "");
+                            }
+                        } catch {
+                            // ignore
+                        }
+                        setMeSubPage("profile");
+                    }}>
+                        <span className="me-menu-icon">🪪</span>
+                        <span className="me-menu-label">编辑资料</span>
+                        <span className="me-menu-arrow">›</span>
+                    </div>
                     <div className="me-menu-item" onClick={() => setMeSubPage("account")}>
-                        <span className="me-menu-icon">👤</span>
-                        <span className="me-menu-label">账户设置</span>
+                        <span className="me-menu-icon">🔑</span>
+                        <span className="me-menu-label">账户与密码</span>
                         <span className="me-menu-arrow">›</span>
                     </div>
                     <div className="me-menu-item" onClick={() => setMeSubPage("change-password")}>
@@ -9018,6 +9047,139 @@ export default function PhonePage() {
 
         if (meSubPage === "invite") {
             return <InviteApp isAdmin={isAdmin} loginUsername={loginUsername} onClose={() => setMeSubPage("main")} />;
+        }
+
+        if (meSubPage === "profile") {
+            const handlePickAvatar = () => {
+                const input = document.createElement("input");
+                input.type = "file";
+                input.accept = "image/jpeg,image/png,image/webp,image/gif";
+                input.onchange = async () => {
+                    const file = input.files?.[0];
+                    if (!file) return;
+                    if (file.size > 5 * 1024 * 1024) { alert("图片超过 5MB，无法上传"); return; }
+                    if (file.size > 1 * 1024 * 1024) { if (!confirm("图片超过 1MB，建议压缩后再上传，是否继续？")) return; }
+                    const token = localStorage.getItem("auth_token");
+                    if (!token) { alert("请先登录"); return; }
+                    setProfileUploading(true);
+                    setProfileMsg("");
+                    try {
+                        const fd = new FormData();
+                        fd.append("file", file);
+                        fd.append("kind", "avatar");
+                        fd.append("token", token);
+                        const up = await fetch("/api/upload", { method: "POST", body: fd });
+                        const upj = await up.json() as { success?: boolean; url?: string; error?: string };
+                        if (!upj.success || !upj.url) throw new Error(upj.error || "上传失败");
+                        const sv = await fetch("/api/auth", {
+                            method: "POST",
+                            headers: { "Content-Type": "application/json" },
+                            body: JSON.stringify({ action: "update_avatar", authToken: token, avatarUrl: upj.url }),
+                        });
+                        const svj = await sv.json() as { success?: boolean; error?: string };
+                        if (!svj.success) throw new Error(svj.error || "保存失败");
+                        setProfileAvatar(upj.url);
+                        setProfileMsg("头像已更新");
+                    } catch (e) {
+                        setProfileMsg(e instanceof Error ? e.message : "上传失败");
+                    } finally {
+                        setProfileUploading(false);
+                    }
+                };
+                input.click();
+            };
+
+            const handleSaveName = async () => {
+                const name = profileName.trim();
+                if (!name) { setProfileMsg("昵称不能为空"); return; }
+                if (name.length > 30) { setProfileMsg("昵称最多30个字符"); return; }
+                const token = localStorage.getItem("auth_token");
+                if (!token) { setProfileMsg("请先登录"); return; }
+                setProfileSaving(true);
+                setProfileMsg("");
+                try {
+                    const res = await fetch("/api/auth", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({ action: "update_profile", authToken: token, newDisplayName: name }),
+                    });
+                    const json = await res.json() as { success?: boolean; error?: string };
+                    if (!json.success) throw new Error(json.error || "保存失败");
+                    setProfileMsg("昵称已保存");
+                } catch (e) {
+                    setProfileMsg(e instanceof Error ? e.message : "保存失败");
+                } finally {
+                    setProfileSaving(false);
+                }
+            };
+
+            return (
+                <div style={{ padding: 16 }}>
+                    <div style={{ fontSize: 16, fontWeight: 700, color: "#3d5c45", marginBottom: 16 }}>🪪 编辑资料</div>
+                    <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+                        {/* 头像 */}
+                        <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 8 }}>
+                            <button
+                                type="button"
+                                onClick={handlePickAvatar}
+                                style={{
+                                    width: 88, height: 88, borderRadius: "50%",
+                                    border: "2px solid #b8dcc4", overflow: "hidden",
+                                    background: "linear-gradient(135deg,#e8f5e9,#c8e6c9)",
+                                    display: "flex", alignItems: "center", justifyContent: "center",
+                                    fontSize: 36, cursor: "pointer", position: "relative"
+                                }}
+                            >
+                                {profileAvatar ? (
+                                    <img src={profileAvatar} alt="avatar" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                                ) : <span>👤</span>}
+                            </button>
+                            <div style={{ fontSize: 12, color: "#4a7c50" }}>{profileUploading ? "上传中…" : "点击头像更换"}</div>
+                        </div>
+
+                        {/* 昵称 */}
+                        <div>
+                            <div style={{ fontSize: 12, color: "#4a7c50", marginBottom: 4 }}>显示昵称</div>
+                            <input
+                                type="text"
+                                value={profileName}
+                                onChange={(e) => setProfileName(e.target.value)}
+                                maxLength={30}
+                                style={{
+                                    width: "100%", padding: "10px 12px", borderRadius: 10,
+                                    border: "1px solid #b8dcc4", background: "rgba(255,255,255,0.8)",
+                                    fontSize: 14, color: "#2e5c33"
+                                }}
+                            />
+                        </div>
+
+                        {/* 账号（只读提示） */}
+                        <div style={{ fontSize: 11, color: "#888", lineHeight: 1.6 }}>
+                            账号（登录名）：{loginUsername}，不可修改。<br />
+                            昵称和头像保存后，个人主页、论坛、小作坊将统一显示。
+                        </div>
+
+                        {profileMsg && (
+                            <div style={{ fontSize: 12, color: profileMsg.includes("失败") || profileMsg.includes("不能") || profileMsg.includes("最多") ? "#ef4444" : "#2e7d32", textAlign: "center" }}>
+                                {profileMsg}
+                            </div>
+                        )}
+
+                        <button
+                            onClick={handleSaveName}
+                            disabled={profileSaving}
+                            className="identity-btn"
+                            style={{ width: "100%", background: profileSaving ? "#b8dcc4" : "#2e7d32", color: "#fff" }}>
+                            {profileSaving ? "保存中..." : "保存昵称"}
+                        </button>
+                        <button
+                            className="identity-btn"
+                            onClick={() => setMeSubPage("settings")}
+                            style={{ width: "100%", background: "#e5e7eb", color: "#3d5c45" }}>← 返回
+                        </button>
+                    </div>
+                </div>
+            );
         }
 
         if (meSubPage === "account") {

@@ -1343,6 +1343,32 @@ export async function POST(request: NextRequest) {
       });
     }
 
+    // ========== 更新显示昵称（无需密码、不掉线） ==========
+    if (action === "update_profile") {
+      if (!authToken) {
+        return NextResponse.json({ error: "缺少 token" }, { status: 401 });
+      }
+      const name = typeof newDisplayName === "string" ? newDisplayName.trim() : "";
+      if (!name) {
+        return NextResponse.json({ error: "昵称不能为空" }, { status: 400 });
+      }
+      if (name.length > 30) {
+        return NextResponse.json({ error: "昵称最多 30 个字符" }, { status: 400 });
+      }
+      const found = await getUserByToken(supabase, authToken);
+      if (!found) {
+        return NextResponse.json({ error: "登录已过期" }, { status: 401 });
+      }
+      const { error } = await supabase
+        .from("users")
+        .update({ display_name: name })
+        .eq("id", found.user.id);
+      if (error) {
+        return NextResponse.json({ error: "更新失败: " + error.message }, { status: 500 });
+      }
+      return NextResponse.json({ success: true, displayName: name });
+    }
+
     // ========== 更新个人自传 ==========
     if (action === "update_bio") {
       if (!authToken || bio === undefined) {
