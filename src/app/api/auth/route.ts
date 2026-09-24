@@ -545,6 +545,13 @@ export async function POST(request: NextRequest) {
         );
       }
 
+      if (user.status === "deactivated") {
+        return NextResponse.json(
+          { error: "该账号已注销，无法登录" },
+          { status: 403 }
+        );
+      }
+
       // 封禁状态检查
       const banStatus = user.ban_status as string;
       if (banStatus === "perma_banned") {
@@ -1359,6 +1366,18 @@ export async function POST(request: NextRequest) {
       if (!found) {
         return NextResponse.json({ error: "登录已过期" }, { status: 401 });
       }
+      const { data: dup } = await supabase
+        .from("users")
+        .select("id")
+        .ilike("display_name", name)
+        .neq("id", found.user.id)
+        .maybeSingle();
+      if (dup) {
+        return NextResponse.json(
+          { error: "这个名字已经有人用啦，换一个吧" },
+          { status: 409 }
+        );
+      }
       const { error } = await supabase
         .from("users")
         .update({ display_name: name })
@@ -1367,6 +1386,72 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ error: "更新失败: " + error.message }, { status: 500 });
       }
       return NextResponse.json({ success: true, displayName: name });
+    }
+
+    // ========== 注销账号 ==========
+    if (action === "deactivate_account") {
+      if (!authToken) {
+        return NextResponse.json({ error: "缺少 token" }, { status: 401 });
+      }
+      const found = await getUserByToken(supabase, authToken);
+      if (!found) {
+        return NextResponse.json({ error: "登录已过期" }, { status: 401 });
+      }
+      const u = found.user;
+      if (u.status === "deactivated") {
+        return NextResponse.json({ error: "账号已经注销" }, { status: 400 });
+      }
+
+      // 1) 删除该账号全部会话（立即下线）
+      await supabase.from("user_sessions").delete().eq("user_id", u.id);
+
+      // 2) 标记已注销（不物理删除）
+      const { error } = await supabase
+        .from("users")
+        .update({
+          status: "deactivated",
+          deactivated_at: new Date().toISOString(),
+        })
+        .eq("id", u.id);
+      if (error) {
+        return NextResponse.json(
+          { error: "注销失败: " + error.message },
+          { status: 500 }
+        );
+      }
+
+      // 3) 返还上级一个邀请名额：释放原邀请码，使其重新可用
+      const usedCode = typeof u.invite_code_used === "string" ? u.invite_code_used : "";
+      if (usedCode) {
+        await supabase
+          .from("invite_codes")
+          .update({
+            status: "active",
+            used_by: null,
+            used_at: null,
+          })
+          .eq("code", usedCode)
+          .eq("used_by", u.id as string);
+      }
+
+      // 4) 写审计日志（仅管理员后台可见）
+      await logAudit(
+        supabase,
+        String(u.id),
+        String(u.username || ""),
+        "account_deactivate",
+        "user",
+        String(u.id),
+        {
+          username: u.username || "",
+          displayName: u.display_name || "",
+          weiboLink: u.weibo_link || "",
+          referrerId: u.referrer_id || null,
+          time: new Date().toISOString(),
+        }
+      );
+
+      return NextResponse.json({ success: true });
     }
 
     // ========== 更新个人自传 ==========
@@ -1391,13 +1476,6 @@ export async function POST(request: NextRequest) {
         return NextResponse.json(
           { error: "登录已过期" },
           { status: 401 }
-        );
-      }
-
-      if (!isAdmin(found.user) && !isSuperAdmin(found.user)) {
-        return NextResponse.json(
-          { error: "无权操作：需要管理员身份" },
-          { status: 403 }
         );
       }
 

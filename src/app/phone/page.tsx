@@ -2003,6 +2003,8 @@ export default function PhonePage() {
     const [profileSaving, setProfileSaving] = useState(false);
     const [profileMsg, setProfileMsg] = useState("");
     const [profileUploading, setProfileUploading] = useState(false);
+    const [meHeadName, setMeHeadName] = useState("");
+    const [meHeadAvatar, setMeHeadAvatar] = useState("");
     const [dockAppIds, setDockAppIds] = useState<string[]>(DEFAULT_DOCK_APP_IDS);
     const [isDockReplacing, setIsDockReplacing] = useState(false);
     const [viewingUserProfile, setViewingUserProfile] = useState<string | null>(null);
@@ -2301,6 +2303,8 @@ export default function PhonePage() {
                     setIsLoggedIn(true);
                     setAuthToken(savedToken);
                     setLoginUsername(userData.username || "");
+                    setMeHeadName(userData.displayName || userData.username || "");
+                    setMeHeadAvatar(userData.avatarUrl || "");
                     setUserBio(userData.userBio || "");
                     setBioDraft(userData.userBio || "");
                     localStorage.setItem("mimi_user_bio", userData.userBio || "");
@@ -3221,6 +3225,8 @@ export default function PhonePage() {
             setIsAdmin(isAdminUser);
             setIsLoggedIn(true);
             setLoginUsername(username);
+            setMeHeadName(result.data?.displayName || username);
+            setMeHeadAvatar(result.data?.avatarUrl || "");
             setUserBio(result.data?.userBio || "");
             setBioDraft(result.data?.userBio || "");
             localStorage.setItem("mimi_user_bio", result.data?.userBio || "");
@@ -3775,7 +3781,7 @@ export default function PhonePage() {
 
         if (appId === "settings") {
             setCurrentApp("me");
-            setMeSubPage("settings");
+            setMeSubPage("main");
             setAppClosing(false);
             return;
         }
@@ -9042,7 +9048,7 @@ export default function PhonePage() {
         }
 
         if (meSubPage === "redeem") {
-            return <RedeemCodePage authToken={authToken ?? ""} onClose={() => setMeSubPage("settings")} />;
+            return <RedeemCodePage authToken={authToken ?? ""} onClose={() => setMeSubPage("main")} />;
         }
 
         if (meSubPage === "invite") {
@@ -9576,8 +9582,72 @@ export default function PhonePage() {
             );
         }
 
-        const displayName = unlockState.userIdentity.name || "小甜玉米";
-        const displayNick = unlockState.userIdentity.nickname;
+        const headName = meHeadName || loginUsername || "小甜玉米";
+
+        const goProfile = async () => {
+            setProfileName(loginUsername);
+            setProfileMsg("");
+            setProfileAvatar("");
+            try {
+                const res = await fetch("/api/auth", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ action: "get_profile", username: loginUsername }),
+                });
+                const json = await res.json() as { success?: boolean; profile?: { displayName?: string; avatarUrl?: string } };
+                if (json.success && json.profile) {
+                    setProfileName(json.profile.displayName || loginUsername);
+                    setProfileAvatar(json.profile.avatarUrl || "");
+                }
+            } catch {
+                // ignore
+            }
+            setMeSubPage("profile");
+        };
+
+        const handleLogout = () => {
+            const ok = window.confirm(
+                "确定退出登录吗？\n\n会清除这台设备上的：登录状态、本地缓存、草稿和个性化偏好。\n\n你的账号、帖子、小作坊商品都存在服务器上，不会被删除，重新登录即可恢复。"
+            );
+            if (ok) {
+                localStorage.clear();
+                window.location.reload();
+            }
+        };
+
+        const handleDeactivate = async () => {
+            const first = window.confirm(
+                "确定要注销账号吗？此操作不可恢复。\n\n注销后：\n· 这个账号将无法再登录\n· 管理员后台会保留你的账号名和微博链接记录\n· 会返还给邀请你的上级一个邀请名额"
+            );
+            if (!first) return;
+            const second = window.confirm("再确认一次：真的要永久注销吗？");
+            if (!second) return;
+            const token = localStorage.getItem("auth_token");
+            try {
+                const res = await fetch("/api/auth", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ action: "deactivate_account", authToken: token }),
+                });
+                const json = await res.json();
+                if (json.success) {
+                    localStorage.clear();
+                    window.location.reload();
+                } else {
+                    alert(json.error || "注销失败，请重试");
+                }
+            } catch {
+                alert("网络错误，请重试");
+            }
+        };
+
+        const item = (icon: string, label: string, onClick: () => void) => (
+            <div className="me-menu-item" onClick={onClick}>
+                <span className="me-menu-icon">{icon}</span>
+                <span className="me-menu-label">{label}</span>
+                <span className="me-menu-arrow">›</span>
+            </div>
+        );
 
         return (
             <div className="me-page">
@@ -9611,75 +9681,59 @@ export default function PhonePage() {
                             color: "#3d5c45"
                         }}>我的</span>
                 </div>
-                <div className="me-header">
-                    <div className="me-avatar">👧</div>
-                    <div className="me-name">{displayName}</div>
-                    {displayNick && <div
-                        className="me-nickname"
-                        style={{
-                            fontSize: 11,
-                            color: "#a16207"
-                        }}>{displayNick}</div>}
-                    <div className="me-level">
-                        {unlockState.unlocked ? "🔓 已解锁" : "🔒 未解锁"}· Lv.1 · Ch1
-                                  </div>
+                <div className="me-header" onClick={goProfile} style={{ cursor: "pointer" }}>
+                    <div className="me-avatar" style={{ overflow: "hidden" }}>
+                        {meHeadAvatar
+                            ? <img src={meHeadAvatar} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                            : "👧"}
+                    </div>
+                    <div className="me-name">{headName}</div>
+                    <div className="me-nickname" style={{ fontSize: 11, color: "#a16207" }}>
+                        账号：{loginUsername} · 点头像编辑资料
+                    </div>
                 </div>
                 <div className="me-menu">
-                    <div className="me-menu-item" onClick={() => setMeSubPage("identity")}>
-                        <span className="me-menu-icon">📝</span>
-                        <span className="me-menu-label">我的自传{unlockState.identityCompleted ? " ✓" : ""}</span>
-                        <span className="me-menu-arrow">›</span>
-                    </div>
-                    <div className="me-menu-item" onClick={() => setMeSubPage("unlock")}>
-                        <span className="me-menu-icon">{unlockState.unlocked ? "🔓" : "🔒"}</span>
-                        <span className="me-menu-label">{unlockState.unlocked ? "身份管理" : "暗号解锁"}</span>
-                        <span className="me-menu-arrow">›</span>
-                    </div>
-                    <div className="me-menu-item" onClick={() => setMeSubPage("invite")}>
-                        <span className="me-menu-icon">🎟️</span>
-                        <span className="me-menu-label">我的邀请码</span>
-                        <span className="me-menu-arrow">›</span>
-                    </div>
-                    <div className="me-menu-item" onClick={() => { setViewingUserProfile(loginUsername); setCurrentApp("user-profile"); }}>
-                        <span className="me-menu-icon">👤</span>
-                        <span className="me-menu-label">我的主页</span>
-                        <span className="me-menu-arrow">›</span>
-                    </div>
+                    <div className="me-group-label">个人资料</div>
+                    {item("🪪", "编辑资料", goProfile)}
+                    {item("📖", "我的自传", () => { setBioDraft(userBio); setBioMessage(""); setMeSubPage("bio"); })}
+
+                    <div className="me-group-label">账号</div>
+                    {item("🔑", "账户与密码", () => setMeSubPage("change-password"))}
+                    {item("🎟️", "我的邀请码", () => setMeSubPage("invite"))}
+                    {item("🎁", "兑换码", () => setMeSubPage("redeem"))}
+
+                    <div className="me-group-label">个性化</div>
+                    {item("🖼️", "壁纸", () => setMeSubPage("wallpaper"))}
+                    {item("🎨", "主题", () => setMeSubPage("theme"))}
+                    {item("🎛️", "悬浮按钮样式", () => setMeSubPage("knob-style"))}
+
                     {isAdmin && (
-                        <div className="me-menu-item" onClick={() => { setBioDraft(userBio); setBioMessage(""); setMeSubPage("bio"); }}>
-                            <span className="me-menu-icon">📖</span>
-                            <span className="me-menu-label">编辑自传</span>
-                            <span className="me-menu-arrow">›</span>
-                        </div>
+                        <>
+                            <div className="me-group-label">管理员</div>
+                            {item("🛠️", "管理后台", () => setShowNewAdmin(true))}
+                            {item("📲", "应用管理", () => setCurrentApp("app-admin"))}
+                        </>
                     )}
-                    <div className="me-menu-item" onClick={() => setMeSubPage("settings")}>
-                        <span className="me-menu-icon">⚙️</span>
-                        <span className="me-menu-label">设置</span>
-                        <span className="me-menu-arrow">›</span>
-                    </div>
-                    <div className="me-menu-item" onClick={() => setMeSubPage("about")}>
-                        <span className="me-menu-icon">ℹ️</span>
-                        <span className="me-menu-label">关于</span>
-                        <span className="me-menu-arrow">›</span>
-                    </div>
+
+                    <div className="me-group-label">关于</div>
+                    {item("ℹ️", "关于米米宇宙", () => setMeSubPage("about"))}
+                    {item("🚪", "退出登录", handleLogout)}
                 </div>
-                {!unlockState.unlocked && <div
-                    style={{
-                        padding: "0 16px",
-                        marginTop: 16
-                    }}>
-                    <div
+                <div style={{ padding: "8px 16px 24px" }}>
+                    <button
+                        onClick={handleDeactivate}
                         style={{
-                            padding: 12,
+                            width: "100%",
+                            padding: "11px",
                             borderRadius: 12,
-                            background: "rgba(254,243,199,0.8)",
-                            fontSize: 11,
-                            color: "#92400e",
-                            textAlign: "center",
-                            lineHeight: 1.5
-                        }}>💡 在「暗号解锁」中输入特殊名字<br />可以解锁全部隐藏功能 ✨
-                                    </div>
-                </div>}
+                            border: "1px solid #fca5a5",
+                            background: "rgba(254,242,242,0.8)",
+                            color: "#dc2626",
+                            fontSize: 13,
+                            fontWeight: 600,
+                            cursor: "pointer"
+                        }}>注销账号</button>
+                </div>
             </div>
         );
     }
@@ -13660,7 +13714,7 @@ export default function PhonePage() {
                                 onClick={() => {
                                     setDefaultPasswordTip(false);
                                     setCurrentApp("me");
-                                    setMeSubPage("account");
+                                    setMeSubPage("change-password");
                                 }}
                                 style={{ flex: 1, padding: "10px 0", borderRadius: 10, border: "none", background: "#2e7d32", color: "#fff", fontWeight: 600, fontSize: 13 }}>
                                 去修改
