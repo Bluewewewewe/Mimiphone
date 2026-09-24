@@ -402,8 +402,11 @@ function wsCarouselModeLabel() {
 
 function wsReadFileAsDataURL(input, kind, cb) {
     if (!input.files?.[0]) return;
+    var file = input.files[0];
+    if (file.size > 5 * 1024 * 1024) { alert("图片超过 5MB，无法上传"); input.value = ""; return; }
+    if (file.size > 1 * 1024 * 1024) { if (!confirm("图片超过 1MB，建议压缩后再上传，是否继续？")) { input.value = ""; return; } }
     // 优先使用 API 上传到对象存储，失败则回退到 base64
-    apiUploadImage(input.files[0], kind)
+    apiUploadImage(file, kind)
         .then((url) => cb(url))
         .catch((err) => {
             console.warn("图片上传失败，回退到本地存储:", err);
