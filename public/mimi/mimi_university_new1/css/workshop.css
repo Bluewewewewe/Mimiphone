@@ -105,7 +105,7 @@
     border-radius: 26px;
     overflow: hidden;
     cursor: pointer;
-    min-height: 200px;
+    height: 280px;
     background: linear-gradient(145deg, #fff8e1, #e8f5e9, #e3f2fd);
     box-shadow:
         0 16px 48px rgba(66, 165, 245, 0.14),
@@ -121,9 +121,7 @@
 }
 
 .ws-notice-card.ws-notice-has-img {
-    min-height: 0;
-    aspect-ratio: 21 / 9;
-    max-height: 320px;
+    height: 280px;
 }
 
 .ws-notice-hero {
@@ -863,9 +861,9 @@
     .ws-sidebar-btn { flex: 1; min-width: 80px; }
     .ws-featured-header { align-items: flex-start; }
     .ws-page-actions { width: 100%; }
+    .ws-notice-card { height: 200px; }
     .ws-notice-card.ws-notice-has-img {
-        aspect-ratio: 16 / 10;
-        max-height: 220px;
+        height: 200px;
     }
     .ws-notice-overlay { padding: 14px 16px; }
     .ws-notice-name { font-size: 18px; }
@@ -972,4 +970,41 @@
     margin: 0;
     color: #e65100;
     font-size: 13px;
+}
+
+/* ============================================================
+   桌面端强制铺满 & 稳定布局（高优先级，覆盖任何收窄/误判）
+   ============================================================ */
+@media (min-width: 769px) {
+    html, body {
+        width: 100%;
+        max-width: 100% !important;
+    }
+    #mainPage { width: 100%; }
+    .ws-page,
+    #pageW.ws-page {
+        width: 100% !important;
+        max-width: 100% !important;
+        margin: 0 !important;
+        padding: 20px 28px !important;
+        box-sizing: border-box;
+    }
+    .ws-layout {
+        grid-template-columns: 176px minmax(0, 1fr) !important;
+        gap: 22px !important;
+    }
+    .ws-cat-side { position: sticky !important; top: 16px !important; }
+    .ws-product-grid {
+        grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)) !important;
+        gap: 18px !important;
+    }
+    /* 管理后台弹窗：桌面端加宽，不再挤成手机窄条 */
+    .modal .modal-content,
+    .modal-dialog-wrap {
+        width: min(1080px, 94vw) !important;
+        max-width: min(1080px, 94vw) !important;
+    }
+    .modal-admin-scroll {
+        max-width: 100% !important;
+    }
 }

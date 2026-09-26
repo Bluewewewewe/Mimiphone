@@ -9876,43 +9876,34 @@ export default function PhonePage() {
                 transition: "opacity 0.2s ease",
                 background: active ? "#fbfaf8" : "transparent"
             }}>
-                <div style={{
-                    padding: "22px 16px 12px 16px",
-                    background: "rgba(255,255,255,0.85)",
-                    backdropFilter: "blur(20px)",
-                    borderBottom: "1px solid rgba(0,0,0,0.05)",
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "space-between",
-                    flexShrink: 0,
-                    opacity: active ? 1 : 0,
-                    transition: "opacity 0.2s ease"
-                }}>
+<div style={{ flex: 1, position: "relative" }}>
                     <button
                         onClick={() => setCurrentApp(null)}
+                        aria-label="返回"
                         style={{
-                            background: "none",
-                            border: "none",
-                            fontSize: "15px",
+                            position: "absolute",
+                            top: 14,
+                            left: 14,
+                            zIndex: 30,
+                            width: 38,
+                            height: 38,
+                            borderRadius: "50%",
+                            border: "1px solid rgba(255,255,255,0.6)",
+                            background: "rgba(255,255,255,0.78)",
+                            backdropFilter: "blur(12px)",
+                            WebkitBackdropFilter: "blur(12px)",
+                            boxShadow: "0 4px 16px rgba(46,92,51,0.18)",
                             color: "#5a9e6a",
+                            fontSize: 18,
+                            lineHeight: 1,
                             cursor: "pointer",
-                            padding: "6px 10px",
-                            borderRadius: 10,
-                            fontWeight: 500
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "center",
+                            padding: 0
                         }}>
-                        ← 返回
+                        ←
                     </button>
-                    <span style={{
-                        fontSize: "15px",
-                        fontWeight: 600,
-                        color: "#1a1a1a",
-                        position: "absolute",
-                        left: "50%",
-                        transform: "translateX(-50%)"
-                    }}>{title}</span>
-                    <div style={{ width: 50 }} />
-                </div>
-                <div style={{ flex: 1, position: "relative" }}>
                     <iframe
                         className="external-app-cache-iframe"
                         src={urlMimi}
