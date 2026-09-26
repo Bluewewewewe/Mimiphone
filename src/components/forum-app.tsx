@@ -643,9 +643,9 @@ export function ForumApp({ onClose, isAdmin = false, loginUsername = "", onViewU
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [initialPostId]);
 
-    const openNotifications = async () => {
+    const openNotifications = async (viewMode: "messages" | "notifications" = "notifications") => {
         setNotifLoading(true);
-        setView(mainTab === "messages" ? "messages" : "notifications");
+        setView(viewMode);
         try {
             const res = await forumApi("notifications");
             if (res.success) setNotifications((res.data as any[]) || []);
@@ -677,7 +677,7 @@ export function ForumApp({ onClose, isAdmin = false, loginUsername = "", onViewU
         if (tab === "home") {
             setView("sections");
         } else if (tab === "messages") {
-            if (notifications.length === 0) openNotifications();
+            if (notifications.length === 0) openNotifications("messages");
             else setView("messages");
         } else {
             setProfileChain([loginUsername]);
@@ -2780,7 +2780,7 @@ export function ForumApp({ onClose, isAdmin = false, loginUsername = "", onViewU
         );
     };
 
-    const showBottomBar = view === "messages" || view === "me" || view === "sections";
+    const showBottomBar = view === "messages" || view === "me" || view === "sections" || view === "notifications";
 
     const renderBottomBar = () => (
         <div style={{
