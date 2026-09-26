@@ -798,6 +798,8 @@ html, body {
 .me-page { padding: 16px; }
 .me-header { text-align: center; padding: 20px 0; background: rgba(255,255,255,0.6); backdrop-filter: blur(16px); border-radius: 20px; margin-bottom: 16px; }
 .me-avatar { font-size: 56px; }
+.me-header .me-avatar { width: 60px; height: 60px; margin: 0 auto; border-radius: 50%; overflow: hidden; display: flex; align-items: center; justify-content: center; background: linear-gradient(135deg,#e8f5e9,#c8e6c9); }
+.me-header .me-avatar img { width: 100%; height: 100%; object-fit: cover; display: block; }
 .me-name { font-size: 18px; font-weight: 600; color: #1a1a1a; margin-top: 6px; }
 .me-level { font-size: 13px; color: #3d5c45; margin-top: 2px; }
 .me-menu { display: flex; flex-direction: column; gap: 1px; padding: 0 16px; }

@@ -9063,8 +9063,8 @@ export default function PhonePage() {
                 input.onchange = async () => {
                     const file = input.files?.[0];
                     if (!file) return;
-                    if (file.size > 5 * 1024 * 1024) { alert("图片超过 5MB，无法上传"); return; }
-                    if (file.size > 1 * 1024 * 1024) { if (!confirm("图片超过 1MB，建议压缩后再上传，是否继续？")) return; }
+                    if (file.size > 2 * 1024 * 1024) { alert("头像图片超过 2MB，无法上传，请压缩或换一张"); return; }
+                    if (file.size > 500 * 1024) { if (!confirm("头像图片超过 500KB，可能加载较慢，是否继续？")) { input.value = ""; return; } }
                     const token = localStorage.getItem("auth_token");
                     if (!token) { alert("请先登录"); return; }
                     setProfileUploading(true);
@@ -9180,7 +9180,7 @@ export default function PhonePage() {
                         </button>
                         <button
                             className="identity-btn"
-                            onClick={() => setMeSubPage("settings")}
+                            onClick={() => setMeSubPage("main")}
                             style={{ width: "100%", background: "#e5e7eb", color: "#3d5c45" }}>← 返回
                         </button>
                     </div>
@@ -9710,6 +9710,7 @@ export default function PhonePage() {
                     {isAdmin && (
                         <>
                             <div className="me-group-label">管理员</div>
+                            {item("✅", "用户审核", () => setCurrentApp("admin-review"))}
                             {item("🛠️", "管理后台", () => setShowNewAdmin(true))}
                             {item("📲", "应用管理", () => setCurrentApp("app-admin"))}
                         </>
@@ -11089,7 +11090,7 @@ export default function PhonePage() {
         case "admin":
             return <AdminApp adminRole={adminRole} onClose={() => setCurrentApp(null)} />;
         case "admin-review":
-            return <AdminReviewApp loginUsername={loginUsername} onClose={() => setCurrentApp(null)} />;
+            return <AdminReviewApp loginUsername={loginUsername} onClose={() => { setCurrentApp("me"); setMeSubPage("main"); }} />;
         case "app-admin":
             return <AppAdminApp loginUsername={loginUsername} onClose={() => setCurrentApp(null)} />;
         case "app-store":
