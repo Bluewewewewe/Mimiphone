@@ -6,7 +6,9 @@ type ReviewUser = {
     id: string;
     username: string;
     weibo_name: string;
+    weibo_link?: string;
     invite_code_used: string;
+    referrer_name?: string | null;
     role: "admin" | "user";
     status: "pending" | "approved" | "rejected";
     created_at: string;
@@ -130,6 +132,21 @@ export function AdminReviewApp({ loginUsername, onClose }: { loginUsername: stri
             }
             return next;
         });
+    }
+
+    function normalizeUrl(link?: string) {
+        const v = (link || "").trim();
+        if (!v) return "";
+        return /^https?:\/\//i.test(v) ? v : "https://" + v;
+    }
+
+    async function copyLink(link: string) {
+        try {
+            await navigator.clipboard.writeText(link);
+            alert("微博主页链接已复制");
+        } catch {
+            prompt("复制此链接：", link);
+        }
     }
 
     function formatTime(iso: string) {
@@ -276,8 +293,28 @@ export function AdminReviewApp({ loginUsername, onClose }: { loginUsername: stri
                                                 color: user.role === "admin" ? "#92400e" : "#2e7d32"
                                             }}>{user.role === "admin" ? "管理员" : "普通用户"}</span>
                                         </div>
-                                        <div style={{ fontSize: 11, color: "#4a7c50", marginBottom: 2 }}>微博昵称：{user.weibo_name || "-"}</div>
-                                        <div style={{ fontSize: 11, color: "#4a7c50", marginBottom: 2 }}>邀请码：{user.invite_code_used || "-"}</div>
+                                        {(() => {
+                                            const full = normalizeUrl(user.weibo_link);
+                                            return (
+                                                <div style={{ fontSize: 11, color: "#4a7c50", marginBottom: 4, display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+                                                    <span style={{ flexShrink: 0 }}>微博主页：</span>
+                                                    {full ? (
+                                                        <>
+                                                            <a href={full} target="_blank" rel="noreferrer"
+                                                                style={{ color: "#1e88e5", textDecoration: "none", maxWidth: 150, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
+                                                                title={full}>
+                                                                🔗 点击查看
+                                                            </a>
+                                                            <button onClick={() => copyLink(full)}
+                                                                style={{ fontSize: 10, padding: "2px 8px", borderRadius: 6, border: "1px solid rgba(30,136,229,0.3)", background: "rgba(30,136,229,0.08)", color: "#1e88e5", cursor: "pointer" }}>
+                                                                复制
+                                                            </button>
+                                                        </>
+                                                    ) : <span>-</span>}
+                                                </div>
+                                            );
+                                        })()}
+                                        <div style={{ fontSize: 11, color: "#4a7c50", marginBottom: 2 }}>邀请码：{user.invite_code_used || "-"}{user.referrer_name ? `（邀请人：${user.referrer_name}）` : ""}</div>
                                         <div style={{ fontSize: 10, color: "#5a9e6a", opacity: 0.8 }}>注册时间：{formatTime(user.created_at)}</div>
                                     </div>
                                 </div>

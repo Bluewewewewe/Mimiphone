@@ -732,7 +732,7 @@ export async function POST(request: NextRequest) {
       const { data, error } = await supabase
         .from("users")
         .select(
-          "id, username, display_name, weibo_name, invite_code_used, role, status, referrer_id, created_at"
+          "id, username, display_name, weibo_name, weibo_link, invite_code_used, role, status, referrer_id, created_at"
         )
         .eq("status", "pending")
         .order("role", { ascending: false }) // admin 优先
