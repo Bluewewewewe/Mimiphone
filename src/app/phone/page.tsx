@@ -9085,6 +9085,7 @@ export default function PhonePage() {
                         const svj = await sv.json() as { success?: boolean; error?: string };
                         if (!svj.success) throw new Error(svj.error || "保存失败");
                         setProfileAvatar(upj.url);
+                        setMeHeadAvatar(upj.url);
                         setProfileMsg("头像已更新");
                     } catch (e) {
                         setProfileMsg(e instanceof Error ? e.message : "上传失败");
@@ -9111,6 +9112,7 @@ export default function PhonePage() {
                     });
                     const json = await res.json() as { success?: boolean; error?: string };
                     if (!json.success) throw new Error(json.error || "保存失败");
+                    setMeHeadName(name);
                     setProfileMsg("昵称已保存");
                 } catch (e) {
                     setProfileMsg(e instanceof Error ? e.message : "保存失败");

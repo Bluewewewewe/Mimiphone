@@ -1378,13 +1378,17 @@ export async function POST(request: NextRequest) {
           { status: 409 }
         );
       }
+      const uid = String(found.user.id);
       const { error } = await supabase
         .from("users")
         .update({ display_name: name })
-        .eq("id", found.user.id);
+        .eq("id", uid);
       if (error) {
         return NextResponse.json({ error: "更新失败: " + error.message }, { status: 500 });
       }
+      // 同步更新该用户存量论坛帖子/回复上的名字快照（查询端也会实时覆盖，双保险）
+      await supabase.from("forum_posts").update({ author_name: name }).eq("author_id", uid);
+      await supabase.from("forum_replies").update({ author_name: name }).eq("author_id", uid);
       return NextResponse.json({ success: true, displayName: name });
     }
 

@@ -38,6 +38,21 @@ function bodyToken(body: any): string | undefined {
   return typeof t === "string" ? t : undefined;
 }
 
+// 批量取用户实时中文名（author_id -> display_name），保证改名后老帖同步
+async function buildAuthorNameMap(supabase: Awaited<ReturnType<typeof getSupabaseClient>>, ids: any[]): Promise<Map<string, string>> {
+  const map = new Map<string, string>();
+  const uniq = Array.from(new Set((ids || []).filter((x): x is string => typeof x === "string")));
+  if (uniq.length === 0) return map;
+  const { data } = await supabase
+    .from("users")
+    .select("id, display_name")
+    .in("id", uniq);
+  (data || []).forEach((u: any) => {
+    if (u && u.id && u.display_name) map.set(u.id, String(u.display_name));
+  });
+  return map;
+}
+
 function requireForumAuth(body: any): Promise<VerifiedUser> {
   return requireAuth(bodyToken(body));
 }
@@ -116,8 +131,10 @@ export async function POST(request: NextRequest) {
       }
       const { data, error } = await query;
       if (error) throw error;
+      const nameMap = await buildAuthorNameMap(supabase, (data || []).map((x) => x.author_id));
       const posts = (data || []).map((p) => ({
         ...p,
+        author_name: p.author_id ? (nameMap.get(p.author_id) || p.author_name) : p.author_name,
         replyCount: p.forum_replies?.[0]?.count ?? 0,
         likes: p.forum_likes?.[0]?.count ?? 0,
         favorites: p.forum_favorites?.[0]?.count ?? 0,
@@ -144,9 +161,16 @@ export async function POST(request: NextRequest) {
         );
       }
       // 统一回复详情字段名，避免前端读错；附带计数
-      const replies = Array.isArray(post.forum_replies) ? post.forum_replies : [];
+      const rawReplies: any[] = Array.isArray(post.forum_replies) ? post.forum_replies : [];
+      const nm = await buildAuthorNameMap(supabase, [post.author_id, ...rawReplies.map((r) => r.author_id)]);
+      const replies = rawReplies.map((r) => ({
+        ...r,
+        author_name: r.author_id ? (nm.get(r.author_id) || r.author_name) : r.author_name,
+      }));
       const data = {
         ...post,
+        author_name: post.author_id ? (nm.get(post.author_id) || post.author_name) : post.author_name,
+        forum_replies: replies,
         forum_replies_detail: replies,
         replyCount: replies.length,
         likes: post.forum_likes?.[0]?.count ?? 0,
