@@ -24,11 +24,21 @@ interface UserProfileData {
   joinedAt: string;
 }
 
+interface FollowUserItem {
+  id: string;
+  username: string;
+  displayName: string;
+  avatarUrl: string;
+  bio: string;
+}
+
 interface UserProfileAppProps {
   username: string;
   isSelf?: boolean;
-  onClose: () => void;
+  embedded?: boolean;
+  onClose?: () => void;
   onOpenPost?: (postId: string) => void;
+  onOpenUser?: (username: string) => void;
 }
 
 async function forumApi(action: string, payload: Record<string, unknown> = {}) {
@@ -63,13 +73,29 @@ const SECTION_LABELS: Record<string, string> = {
   "bug-report": "Bug反馈",
 };
 
-export default function UserProfileApp({ username, isSelf = false, onClose, onOpenPost }: UserProfileAppProps) {
+export default function UserProfileApp({
+  username,
+  isSelf = false,
+  embedded = false,
+  onClose,
+  onOpenPost,
+  onOpenUser,
+}: UserProfileAppProps) {
   const [profile, setProfile] = useState<UserProfileData | null>(null);
   const [activeTab, setActiveTab] = useState<"posts" | "likes" | "favorites">("posts");
   const [posts, setPosts] = useState<ProfilePostCard[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState("");
   const [avatarUploading, setAvatarUploading] = useState(false);
+
+  // 关注相关
+  const [followingCount, setFollowingCount] = useState(0);
+  const [followerCount, setFollowerCount] = useState(0);
+  const [isFollowing, setIsFollowing] = useState(false);
+  const [followBusy, setFollowBusy] = useState(false);
+  const [listModal, setListModal] = useState<null | "following" | "followers">(null);
+  const [listUsers, setListUsers] = useState<FollowUserItem[]>([]);
+  const [listLoading, setListLoading] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -85,9 +111,20 @@ export default function UserProfileApp({ username, isSelf = false, onClose, onOp
         const p = res.data as UserProfileData;
         if (cancelled) return;
         setProfile(p);
+        setActiveTab("posts");
 
-        const pr = await forumApi("user_posts", { userId: p.id });
-        if (!cancelled && pr.success) setPosts((pr.data as ProfilePostCard[]) || []);
+        const [pr, cr] = await Promise.all([
+          forumApi("user_posts", { userId: p.id }),
+          forumApi("follow_counts", { userId: p.id }),
+        ]);
+        if (cancelled) return;
+        if (pr.success) setPosts((pr.data as ProfilePostCard[]) || []);
+        if (cr.success && cr.data) {
+          const c = cr.data as { following: number; followers: number; isFollowing: boolean };
+          setFollowingCount(c.following);
+          setFollowerCount(c.followers);
+          setIsFollowing(c.isFollowing);
+        }
       } catch {
         if (!cancelled) setLoadError("加载失败，请稍后重试");
       } finally {
@@ -116,6 +153,35 @@ export default function UserProfileApp({ username, isSelf = false, onClose, onOp
       else alert(r.error || "加载失败");
     }
   }
+
+  const toggleFollow = async () => {
+    if (!profile || followBusy) return;
+    setFollowBusy(true);
+    try {
+      const r = await forumApi("follow", { userId: profile.id });
+      if (r.success && r.data) {
+        const d = r.data as { following: boolean };
+        setIsFollowing(d.following);
+        setFollowerCount((n) => n + (d.following ? 1 : -1));
+      } else {
+        alert(r.error || "操作失败");
+      }
+    } finally {
+      setFollowBusy(false);
+    }
+  };
+
+  const openFollowList = async (type: "following" | "followers") => {
+    if (!profile) return;
+    setListModal(type);
+    setListLoading(true);
+    try {
+      const r = await forumApi("follow_list", { userId: profile.id, type });
+      if (r.success) setListUsers((r.data as FollowUserItem[]) || []);
+    } finally {
+      setListLoading(false);
+    }
+  };
 
   const handlePickAvatar = () => {
     if (!isSelf) return;
@@ -222,10 +288,14 @@ export default function UserProfileApp({ username, isSelf = false, onClose, onOp
       <div style={{ display: "flex", gap: 14, fontSize: 12, color: "#9ca3af" }}>
         <span>💬 {post.replyCount}</span>
         <span>❤️ {post.likes}</span>
-        <span>⭐ {post.favorites}</span>
+        <span>⭐ {favoritesLabel(post)}</span>
       </div>
     </div>
   );
+
+  function favoritesLabel(post: ProfilePostCard) {
+    return post.favorites;
+  }
 
   const emptyText = useMemo(() => {
     if (activeTab === "posts") return isSelf ? "还没有发布过帖子" : "TA还没有发布过帖子";
@@ -235,39 +305,41 @@ export default function UserProfileApp({ username, isSelf = false, onClose, onOp
 
   return (
     <div style={{ height: "100%", display: "flex", flexDirection: "column", background: "#f5f5f5" }}>
-      <div
-        style={{
-          background: "linear-gradient(135deg, #f97316 0%, #fb923c 100%)",
-          padding: "16px 20px",
-          color: "#fff",
-          display: "flex",
-          alignItems: "center",
-          gap: 12,
-          flexShrink: 0,
-        }}
-      >
-        <button
-          onClick={onClose}
+      {!embedded && (
+        <div
           style={{
-            background: "rgba(255,255,255,0.2)",
-            border: "none",
+            background: "linear-gradient(135deg, #f97316 0%, #fb923c 100%)",
+            padding: "16px 20px",
             color: "#fff",
-            width: 32,
-            height: 32,
-            borderRadius: 8,
-            fontSize: 18,
-            cursor: "pointer",
             display: "flex",
             alignItems: "center",
-            justifyContent: "center",
+            gap: 12,
+            flexShrink: 0,
           }}
         >
-          ←
-        </button>
-        <div style={{ flex: 1, fontSize: 16, fontWeight: 600 }}>
-          {isSelf ? "我的主页" : "用户主页"}
+          <button
+            onClick={onClose}
+            style={{
+              background: "rgba(255,255,255,0.2)",
+              border: "none",
+              color: "#fff",
+              width: 32,
+              height: 32,
+              borderRadius: 8,
+              fontSize: 18,
+              cursor: "pointer",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+            }}
+          >
+            ←
+          </button>
+          <div style={{ flex: 1, fontSize: 16, fontWeight: 600 }}>
+            {isSelf ? "我的主页" : "用户主页"}
+          </div>
         </div>
-      </div>
+      )}
 
       <div style={{ flex: 1, overflowY: "auto" }}>
         <div
@@ -354,6 +426,67 @@ export default function UserProfileApp({ username, isSelf = false, onClose, onOp
             </div>
           </div>
 
+          {/* 关注数 / 粉丝数 */}
+          <div
+            style={{
+              display: "flex",
+              gap: 10,
+              marginTop: 14,
+            }}
+          >
+            <button
+              onClick={() => openFollowList("following")}
+              style={{
+                flex: 1,
+                background: "#f9fafb",
+                border: "1px solid #f3f4f6",
+                borderRadius: 10,
+                padding: "8px 0",
+                cursor: "pointer",
+                fontSize: 12,
+                color: "#6b7280",
+              }}
+            >
+              <span style={{ fontSize: 15, fontWeight: 700, color: "#1f2937" }}>{followingCount}</span>
+              <span style={{ marginLeft: 4 }}>关注</span>
+            </button>
+            <button
+              onClick={() => openFollowList("followers")}
+              style={{
+                flex: 1,
+                background: "#f9fafb",
+                border: "1px solid #f3f4f6",
+                borderRadius: 10,
+                padding: "8px 0",
+                cursor: "pointer",
+                fontSize: 12,
+                color: "#6b7280",
+              }}
+            >
+              <span style={{ fontSize: 15, fontWeight: 700, color: "#1f2937" }}>{followerCount}</span>
+              <span style={{ marginLeft: 4 }}>粉丝</span>
+            </button>
+            {!isSelf && (
+              <button
+                onClick={toggleFollow}
+                disabled={followBusy}
+                style={{
+                  flex: 1,
+                  border: "none",
+                  borderRadius: 10,
+                  padding: "8px 0",
+                  fontSize: 13,
+                  fontWeight: 600,
+                  cursor: "pointer",
+                  background: isFollowing ? "#f3f4f6" : "#f97316",
+                  color: isFollowing ? "#6b7280" : "#fff",
+                }}
+              >
+                {followBusy ? "..." : isFollowing ? "已关注" : "+ 关注"}
+              </button>
+            )}
+          </div>
+
           <div
             style={{
               marginTop: 14,
@@ -370,14 +503,7 @@ export default function UserProfileApp({ username, isSelf = false, onClose, onOp
           </div>
         </div>
 
-        <div
-          style={{
-            display: "flex",
-            gap: 6,
-            padding: "0 12px",
-            marginBottom: 8,
-          }}
-        >
+        <div style={{ display: "flex", gap: 6, padding: "0 12px", marginBottom: 8 }}>
           {(
             [
               { key: "posts", label: "帖子" },
@@ -411,33 +537,13 @@ export default function UserProfileApp({ username, isSelf = false, onClose, onOp
 
         <div style={{ padding: "0 12px 16px" }}>
           {loadError ? (
-            <div
-              style={{
-                textAlign: "center",
-                fontSize: 13,
-                color: "#9ca3af",
-                padding: "30px 0",
-                background: "#fff",
-                borderRadius: 12,
-              }}
-            >
+            <div style={{ textAlign: "center", fontSize: 13, color: "#9ca3af", padding: "30px 0", background: "#fff", borderRadius: 12 }}>
               {loadError}
             </div>
           ) : loading ? (
-            <div style={{ textAlign: "center", fontSize: 13, color: "#9ca3af", padding: "30px 0" }}>
-              加载中...
-            </div>
+            <div style={{ textAlign: "center", fontSize: 13, color: "#9ca3af", padding: "30px 0" }}>加载中...</div>
           ) : posts.length === 0 ? (
-            <div
-              style={{
-                textAlign: "center",
-                fontSize: 13,
-                color: "#9ca3af",
-                padding: "30px 0",
-                background: "#fff",
-                borderRadius: 12,
-              }}
-            >
+            <div style={{ textAlign: "center", fontSize: 13, color: "#9ca3af", padding: "30px 0", background: "#fff", borderRadius: 12 }}>
               {emptyText}
             </div>
           ) : (
@@ -445,6 +551,111 @@ export default function UserProfileApp({ username, isSelf = false, onClose, onOp
           )}
         </div>
       </div>
+
+      {/* 关注/粉丝列表弹层 */}
+      {listModal && (
+        <div
+          onClick={() => setListModal(null)}
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(0,0,0,0.4)",
+            zIndex: 1000,
+            display: "flex",
+            alignItems: "flex-end",
+          }}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              width: "100%",
+              maxHeight: "70%",
+              background: "#fff",
+              borderRadius: "20px 20px 0 0",
+              display: "flex",
+              flexDirection: "column",
+            }}
+          >
+            <div
+              style={{
+                padding: "14px 20px",
+                borderBottom: "1px solid #f3f4f6",
+                display: "flex",
+                alignItems: "center",
+                gap: 10,
+                fontSize: 15,
+                fontWeight: 600,
+              }}
+            >
+              <button onClick={() => setListModal(null)} style={{ border: "none", background: "none", fontSize: 18, cursor: "pointer", color: "#6b7280" }}>
+                ←
+              </button>
+              {listModal === "following" ? "我的关注" : "我的粉丝"}
+            </div>
+            <div style={{ flex: 1, overflowY: "auto", padding: 12 }}>
+              {listLoading ? (
+                <div style={{ textAlign: "center", color: "#9ca3af", fontSize: 13, padding: 20 }}>加载中...</div>
+              ) : listUsers.length === 0 ? (
+                <div style={{ textAlign: "center", color: "#9ca3af", fontSize: 13, padding: 30 }}>
+                  {listModal === "following" ? "还没有关注任何人" : "还没有粉丝"}
+                </div>
+              ) : (
+                listUsers.map((u) => (
+                  <div
+                    key={u.id}
+                    style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 4px" }}
+                  >
+                    <button
+                      onClick={() => {
+                        setListModal(null);
+                        onOpenUser?.(u.username);
+                      }}
+                      style={{
+                        width: 44,
+                        height: 44,
+                        borderRadius: "50%",
+                        overflow: "hidden",
+                        border: "none",
+                        background: "linear-gradient(135deg,#fde68a,#fca5a5)",
+                        fontSize: 20,
+                        cursor: "pointer",
+                        flexShrink: 0,
+                        padding: 0,
+                      }}
+                    >
+                      {u.avatarUrl ? (
+                        <img src={u.avatarUrl} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                      ) : (
+                        "🌽"
+                      )}
+                    </button>
+                    <div
+                      style={{ flex: 1, minWidth: 0, cursor: "pointer" }}
+                      onClick={() => {
+                        setListModal(null);
+                        onOpenUser?.(u.username);
+                      }}
+                    >
+                      <div style={{ fontSize: 14, fontWeight: 600, color: "#1f2937" }}>{u.displayName}</div>
+                      <div
+                        style={{
+                          fontSize: 12,
+                          color: "#9ca3af",
+                          overflow: "hidden",
+                          textOverflow: "ellipsis",
+                          whiteSpace: "nowrap",
+                        }}
+                      >
+                        {u.bio || "@" + u.username}
+                      </div>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

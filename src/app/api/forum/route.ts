@@ -82,7 +82,7 @@ async function createNotification(
       user_id: n.userId,
       actor_id: n.actorId,
       type: n.type,
-      post_id: n.postId,
+      post_id: n.postId || null,
       reply_id: n.replyId || null,
       content: n.content ? String(n.content).slice(0, 100) : null,
       is_read: false,
@@ -143,7 +143,7 @@ export async function POST(request: NextRequest) {
     const { action } = body;
 
     // 写操作限流：发帖/回复/点赞/收藏/管理操作每分钟10次
-    if (action && !["list", "detail", "unread_count"].includes(action as string)) {
+    if (action && !["list", "detail", "unread_count", "follow_counts", "follow_list"].includes(action as string)) {
       const limit = rateLimit(request, `forum:${action as string}`, 10, 60);
       if (!limit.allowed) {
         return NextResponse.json(
@@ -154,13 +154,26 @@ export async function POST(request: NextRequest) {
     }
 
     if (action === "list") {
-      const { section, search } = body;
+      const { section, search, feed } = body;
       let query = supabase
         .from("forum_posts")
         .select("*, forum_replies(count), forum_likes(count), forum_favorites(count)")
         .is("deleted_at", null)
         .order("is_pinned", { ascending: false })
         .order("created_at", { ascending: false });
+      // 关注动态：只看自己关注的人发的帖
+      if (feed === "following") {
+        const me = await requireForumAuth(body);
+        const { data: follows } = await supabase
+          .from("forum_follows")
+          .select("following_id")
+          .eq("follower_id", me.userId);
+        const ids = (follows || []).map((x: any) => x.following_id).filter(Boolean);
+        if (ids.length === 0) {
+          return NextResponse.json({ success: true, data: [] });
+        }
+        query = query.in("author_id", ids);
+      }
       if (section && section !== "all") {
         query = query.eq("section", section);
       }
@@ -650,6 +663,11 @@ export async function POST(request: NextRequest) {
       const actorIds = Array.from(new Set((data || []).map((x) => x.actor_id).filter(Boolean)));
       const postIds = Array.from(new Set((data || []).map((x) => x.post_id).filter(Boolean)));
       const im = await buildUserInfoMap(supabase, actorIds);
+      const { data: actorUsers } = await supabase
+        .from("users")
+        .select("id, username")
+        .in("id", actorIds);
+      const actorNameMap = new Map<string, string>((actorUsers || []).map((u) => [u.id, u.username]));
       const { data: postsData } = await supabase
         .from("forum_posts")
         .select("id, title, deleted_at")
@@ -662,6 +680,7 @@ export async function POST(request: NextRequest) {
           ...n,
           actor_name: ai?.name || "用户",
           actor_avatar: ai?.avatar || "",
+          actor_username: n.actor_id ? actorNameMap.get(n.actor_id) || "" : "",
           post_title: pt?.title || "（帖子已删除）",
           post_deleted: !!pt?.deleted_at,
         };
@@ -691,6 +710,107 @@ export async function POST(request: NextRequest) {
         .eq("user_id", user.userId)
         .eq("is_read", false);
       return NextResponse.json({ success: true });
+    }
+
+    // ========== 关注 / 取消关注 ==========
+    if (action === "follow") {
+      const me = await requireForumAuth(body);
+      const { userId } = body;
+      if (typeof userId !== "string" || !UUID_RE.test(userId)) return badRequest("用户ID无效");
+      if (userId === me.userId) return badRequest("不能关注自己");
+      const { data: target, error: te } = await supabase
+        .from("users")
+        .select("id, status")
+        .eq("id", userId)
+        .maybeSingle();
+      if (te) throw te;
+      if (!target) return NextResponse.json({ success: false, error: "用户不存在" }, { status: 404 });
+      if (target.status === "deactivated") return NextResponse.json({ success: false, error: "用户不存在" }, { status: 404 });
+
+      const { data: existing } = await supabase
+        .from("forum_follows")
+        .select("id")
+        .eq("follower_id", me.userId)
+        .eq("following_id", userId)
+        .maybeSingle();
+      if (existing) {
+        await supabase.from("forum_follows").delete().eq("id", existing.id);
+        return NextResponse.json({ success: true, data: { following: false } });
+      }
+      await supabase.from("forum_follows").insert({
+        follower_id: me.userId,
+        following_id: userId,
+        created_at: new Date().toISOString(),
+      });
+      await createNotification(supabase, {
+        userId,
+        actorId: me.userId,
+        type: "follow",
+        postId: "",
+      });
+      return NextResponse.json({ success: true, data: { following: true } });
+    }
+
+    // ========== 关注数 / 粉丝数 ==========
+    if (action === "follow_counts") {
+      const { userId } = body;
+      if (typeof userId !== "string" || !UUID_RE.test(userId)) return badRequest("用户ID无效");
+      const [{ count: following }, { count: followers }] = await Promise.all([
+        supabase
+          .from("forum_follows")
+          .select("id", { count: "exact", head: true })
+          .eq("follower_id", userId),
+        supabase
+          .from("forum_follows")
+          .select("id", { count: "exact", head: true })
+          .eq("following_id", userId),
+      ]);
+      // 附带当前查看者是否已关注（未登录/本人时为 false）
+      let isFollowing = false;
+      try {
+        const viewer = await requireForumAuth(body);
+        if (viewer.userId !== userId) {
+          const { data } = await supabase
+            .from("forum_follows")
+            .select("id")
+            .eq("follower_id", viewer.userId)
+            .eq("following_id", userId)
+            .maybeSingle();
+          isFollowing = !!data;
+        }
+      } catch {
+        isFollowing = false;
+      }
+      return NextResponse.json({
+        success: true,
+        data: { following: following || 0, followers: followers || 0, isFollowing },
+      });
+    }
+
+    // ========== 关注列表 / 粉丝列表 ==========
+    if (action === "follow_list") {
+      const { userId, type: listType } = body;
+      if (typeof userId !== "string" || !UUID_RE.test(userId)) return badRequest("用户ID无效");
+      if (listType !== "following" && listType !== "followers") return badRequest("列表类型无效");
+      const col = listType === "following" ? "follower_id" : "following_id";
+      const otherTable = listType === "following" ? "following" : "follower";
+      const { data, error } = await supabase
+        .from("forum_follows")
+        .select(`created_at, ${otherTable}:users!forum_follows_${listType === "following" ? "following" : "follower"}_id_fkey(id, username, display_name, avatar_url, user_bio, status)`)
+        .eq(col, userId)
+        .order("created_at", { ascending: false });
+      if (error) throw error;
+      const rows = (data || [])
+        .map((x: any) => x[otherTable])
+        .filter((u: any) => u && u.status !== "deactivated")
+        .map((u: any) => ({
+          id: u.id,
+          username: u.username,
+          displayName: u.display_name || u.username,
+          avatarUrl: u.avatar_url || "",
+          bio: u.user_bio || "",
+        }));
+      return NextResponse.json({ success: true, data: rows });
     }
 
     return NextResponse.json(

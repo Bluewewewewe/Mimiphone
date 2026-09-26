@@ -1,5 +1,6 @@
 "use client";
 import { useState, useEffect, useCallback, useMemo } from "react";
+import UserProfileApp from "./user-profile-app";
 
 // ============ 类型定义 ============
 interface ForumPost {
@@ -321,7 +322,13 @@ interface ForumAppProps {
 }
 
 export function ForumApp({ onClose, isAdmin = false, loginUsername = "", onViewUserProfile, initialPostId = null, onConsumeInitialPost }: ForumAppProps = {}) {
-    const [view, setView] = useState<"sections" | "posts" | "postDetail" | "newPost" | "search" | "notifications">("sections");
+    const [view, setView] = useState<"sections" | "posts" | "postDetail" | "newPost" | "search" | "notifications" | "messages" | "me">("sections");
+    const [mainTab, setMainTab] = useState<"home" | "messages" | "me">("home");
+    const [followingPosts, setFollowingPosts] = useState<ForumPost[]>([]);
+    const [followingLoaded, setFollowingLoaded] = useState(false);
+    const [followingLoading, setFollowingLoading] = useState(false);
+    const [profileChain, setProfileChain] = useState<string[]>([]);
+
     const [currentSection, setCurrentSection] = useState<string | null>(null);
     const [currentPost, setCurrentPost] = useState<ForumPost | null>(null);
     const [posts, setPosts] = useState<ForumPost[]>([]);
@@ -609,7 +616,8 @@ export function ForumApp({ onClose, isAdmin = false, loginUsername = "", onViewU
     const [unreadCount, setUnreadCount] = useState(0);
     const [notifications, setNotifications] = useState<any[]>([]);
     const [notifLoading, setNotifLoading] = useState(false);
-    const [detailReturnView, setDetailReturnView] = useState<"sections" | "posts" | "notifications">("sections");
+    const [notifFilter, setNotifFilter] = useState<"all" | "like" | "comment">("all");
+    const [detailReturnView, setDetailReturnView] = useState<"sections" | "posts" | "notifications" | "me">("sections");
 
     const refreshUnread = useCallback(async () => {
         if (!getAuthToken()) return;
@@ -637,7 +645,7 @@ export function ForumApp({ onClose, isAdmin = false, loginUsername = "", onViewU
 
     const openNotifications = async () => {
         setNotifLoading(true);
-        setView("notifications");
+        setView(mainTab === "messages" ? "messages" : "notifications");
         try {
             const res = await forumApi("notifications");
             if (res.success) setNotifications((res.data as any[]) || []);
@@ -646,8 +654,51 @@ export function ForumApp({ onClose, isAdmin = false, loginUsername = "", onViewU
         }
     };
 
+    const loadFollowing = async () => {
+        if (!getAuthToken()) {
+            setFollowingPosts([]);
+            setFollowingLoaded(true);
+            return;
+        }
+        setFollowingLoading(true);
+        try {
+            const res = await forumApi("list", { feed: "following" });
+            if (res.success && Array.isArray(res.data)) {
+                setFollowingPosts((res.data as ApiPost[]).map(mapApiPostToPost));
+            }
+            setFollowingLoaded(true);
+        } finally {
+            setFollowingLoading(false);
+        }
+    };
+
+    const goMainTab = (tab: "home" | "messages" | "me") => {
+        setMainTab(tab);
+        if (tab === "home") {
+            setView("sections");
+        } else if (tab === "messages") {
+            if (notifications.length === 0) openNotifications();
+            else setView("messages");
+        } else {
+            setProfileChain([loginUsername]);
+            setView("me");
+        }
+    };
+
+    const viewUserByName = (username: string) => {
+        setProfileChain(prev => [...prev, username]);
+        setView("me");
+    };
+
+    const closeProfile = () => {
+        setProfileChain(prev => {
+            const next = prev.slice(0, -1);
+            return next.length === 0 ? [loginUsername] : next;
+        });
+    };
+
     // 从通知/主页打开某帖详情
-    const openPostDetailFromId = async (postId: string, returnTo: "sections" | "posts" | "notifications") => {
+    const openPostDetailFromId = async (postId: string, returnTo: "sections" | "posts" | "notifications" | "me") => {
         setDetailReturnView(returnTo);
         const fresh = await fetchForumPostDetail(postId);
         if (fresh) {
@@ -929,7 +980,7 @@ export function ForumApp({ onClose, isAdmin = false, loginUsername = "", onViewU
             }}>
                 {loginUsername && (
                     <button
-                        onClick={() => onViewUserProfile?.(loginUsername)}
+                        onClick={() => goMainTab("me")}
                         style={{
                             position: "absolute",
                             top: 28,
@@ -968,7 +1019,7 @@ export function ForumApp({ onClose, isAdmin = false, loginUsername = "", onViewU
                 <div style={{ fontSize: 20, fontWeight: 700, marginBottom: 4, display: "flex", alignItems: "center", gap: 10 }}>
                     💬 社区论坛
                     <button
-                        onClick={openNotifications}
+                        onClick={() => goMainTab("messages")}
                         style={{
                             position: "relative",
                             background: "rgba(255,255,255,0.25)",
@@ -1012,6 +1063,32 @@ export function ForumApp({ onClose, isAdmin = false, loginUsername = "", onViewU
                     <span>搜索帖子或用户</span>
                 </div>
             </div>
+
+            {/* 你的关注入口 */}
+            {loginUsername && (
+                <div style={{ padding: "0 16px 12px", background: "#fff" }}>
+                    <div
+                        onClick={() => {
+                            if (!followingLoaded) loadFollowing();
+                            setView("posts");
+                            setCurrentSection("__following__");
+                        }}
+                        style={{
+                            display: "flex",
+                            alignItems: "center",
+                            gap: 10,
+                            padding: "12px 14px",
+                            background: "linear-gradient(135deg, #fff7ed 0%, #ffedd5 100%)",
+                            borderRadius: 12,
+                            border: "1px solid #fed7aa",
+                            cursor: "pointer"
+                        }}>
+                        <span style={{ fontSize: 18 }}>⭐</span>
+                        <span style={{ fontSize: 14, fontWeight: 600, color: "#9a3412" }}>你的关注</span>
+                        <span style={{ marginLeft: "auto", fontSize: 14, color: "#ea580c" }}>›</span>
+                    </div>
+                </div>
+            )}
 
             {/* 官方通知置顶 */}
             {(() => {
@@ -1283,7 +1360,76 @@ export function ForumApp({ onClose, isAdmin = false, loginUsername = "", onViewU
     );
 
     // ============ 渲染：帖子列表 ============
+    const renderFollowingFeed = () => {
+        const list = followingPosts;
+        const openOne = async (post: ForumPost) => {
+            incrementViewCount(post.id);
+            setDetailReturnView("posts");
+            setView("postDetail");
+            const fresh = await fetchForumPostDetail(post.id);
+            setCurrentPost(fresh || post);
+        };
+        return (
+            <div style={{ height: "100%", display: "flex", flexDirection: "column", background: "#f5f5f5" }}>
+                <div style={{
+                    background: "linear-gradient(135deg, #f97316 0%, #fb923c 100%)",
+                    padding: "16px 20px", color: "#fff",
+                    display: "flex", alignItems: "center", gap: 12
+                }}>
+                    <button
+                        onClick={() => { setView("sections"); setCurrentSection(null); }}
+                        style={{
+                            background: "rgba(255,255,255,0.2)", border: "none", color: "#fff",
+                            width: 32, height: 32, borderRadius: 8, fontSize: 18, cursor: "pointer",
+                            display: "flex", alignItems: "center", justifyContent: "center"
+                        }}>←</button>
+                    <div style={{ flex: 1 }}>
+                        <div style={{ fontSize: 18, fontWeight: 700 }}>⭐ 你的关注</div>
+                        <div style={{ fontSize: 12, opacity: 0.9 }}>关注用户发布的最新帖子</div>
+                    </div>
+                </div>
+                <div style={{ flex: 1, overflow: "auto", padding: "12px 16px" }}>
+                    {followingLoading ? (
+                        <div style={{ textAlign: "center", padding: 40, color: "#999", fontSize: 14 }}>加载中...</div>
+                    ) : list.length === 0 ? (
+                        <div style={{ textAlign: "center", padding: 40, color: "#999" }}>
+                            <div style={{ fontSize: 48, marginBottom: 12 }}>🌱</div>
+                            <div style={{ fontSize: 14 }}>还没有关注的人</div>
+                            <div style={{ fontSize: 12, marginTop: 6 }}>去帖子里点作者头像关注吧</div>
+                        </div>
+                    ) : (
+                        list.map(post => (
+                            <div key={post.id} onClick={() => openOne(post)} style={{
+                                background: "#fff", borderRadius: 12, padding: 16, marginBottom: 12,
+                                cursor: "pointer", boxShadow: "0 1px 3px rgba(0,0,0,0.05)"
+                            }}>
+                                <div style={{ fontSize: 15, fontWeight: 600, color: "#1f2937", marginBottom: 8, lineHeight: 1.4 }}>
+                                    {post.isEssence && <span style={{ color: "#f59e0b", marginRight: 6 }}>⭐</span>}
+                                    {post.title}
+                                </div>
+                                <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
+                                    <Avatar url={post.avatarUrl} fallback={post.authorAvatar} size={32}
+                                        onClick={post.authorId ? () => viewUserByName(post.author) : undefined} />
+                                    <span style={{ fontSize: 13, color: "#6b7280", fontWeight: 500 }}>{post.author}</span>
+                                    <span style={{ fontSize: 12, color: "#d1d5db" }}>·</span>
+                                    <span style={{ fontSize: 12, color: "#9ca3af" }}>{post.createdAt}</span>
+                                </div>
+                                <div style={{ display: "flex", gap: 16, fontSize: 12, color: "#9ca3af" }}>
+                                    <span>💬 {post.replyCount} 回复</span>
+                                    <span>👁 {post.viewCount} 浏览</span>
+                                    <span>👍 {post.likes} 赞</span>
+                                    <span>⭐ {post.favorites} 收藏</span>
+                                </div>
+                            </div>
+                        ))
+                    )}
+                </div>
+            </div>
+        );
+    };
+
     const renderPosts = () => {
+        if (currentSection === "__following__") return renderFollowingFeed();
         const filteredPosts = getFilteredPosts();
         const section = getSection(currentSection || "");
 
@@ -1483,9 +1629,16 @@ export function ForumApp({ onClose, isAdmin = false, loginUsername = "", onViewU
                 }}>
                     <button
                         onClick={() => {
-                            setView(detailReturnView);
                             setCurrentPost(null);
-                            if (detailReturnView === "notifications") refreshUnread();
+                            if (mainTab === "home") {
+                                if (detailReturnView === "posts") setView("posts");
+                                else { setView("sections"); setCurrentSection(null); }
+                            } else if (mainTab === "messages") {
+                                setView("messages");
+                                refreshUnread();
+                            } else {
+                                setView("me");
+                            }
                         }}
                         style={{
                             background: "rgba(255,255,255,0.2)",
@@ -2478,21 +2631,37 @@ export function ForumApp({ onClose, isAdmin = false, loginUsername = "", onViewU
     };
 
     // ============ 渲染：通知列表 ==========
-    const renderNotifications = () => (
+    const renderMessages = () => {
+        const isTab = mainTab === "messages";
+        const filteredNotifs = notifications.filter((n) => {
+            if (notifFilter === "like") return n.type === "like";
+            if (notifFilter === "comment") return n.type === "reply" || n.type === "sub_reply";
+            return true;
+        });
+        const typeMapAll: Record<string, { icon: string; text: string }> = {
+            reply: { icon: "💬", text: "回复了你的帖子" },
+            sub_reply: { icon: "💬", text: "回复了你的评论" },
+            like: { icon: "❤️", text: "赞了你的帖子" },
+            favorite: { icon: "⭐", text: "收藏了你的帖子" },
+            follow: { icon: "👤", text: "关注了你" },
+        };
+        return (
         <div style={{ height: "100%", display: "flex", flexDirection: "column", background: "#f5f5f5" }}>
             <div style={{
                 background: "linear-gradient(135deg, #f97316 0%, #fb923c 100%)",
                 padding: "16px 20px", color: "#fff",
                 display: "flex", alignItems: "center", gap: 12
             }}>
-                <button
-                    onClick={() => setView("sections")}
-                    style={{
-                        background: "rgba(255,255,255,0.2)", border: "none", color: "#fff",
-                        width: 32, height: 32, borderRadius: 8, fontSize: 18, cursor: "pointer",
-                        display: "flex", alignItems: "center", justifyContent: "center"
-                    }}>←</button>
-                <div style={{ flex: 1, fontSize: 16, fontWeight: 600 }}>消息通知</div>
+                {!isTab && (
+                    <button
+                        onClick={() => setView("sections")}
+                        style={{
+                            background: "rgba(255,255,255,0.2)", border: "none", color: "#fff",
+                            width: 32, height: 32, borderRadius: 8, fontSize: 18, cursor: "pointer",
+                            display: "flex", alignItems: "center", justifyContent: "center"
+                        }}>←</button>
+                )}
+                <div style={{ flex: 1, fontSize: 16, fontWeight: 600 }}>消息</div>
                 <button
                     onClick={async () => {
                         await forumApi("mark_all_notifications_read");
@@ -2505,39 +2674,57 @@ export function ForumApp({ onClose, isAdmin = false, loginUsername = "", onViewU
                     }}>全部已读</button>
             </div>
 
+            {/* 分类筛选：全部 / 赞 / 评论和@ */}
+            <div style={{ background: "#fff", padding: "10px 16px", display: "flex", gap: 8, borderBottom: "1px solid #f0f0f0" }}>
+                {[
+                    { key: "all", label: "全部" },
+                    { key: "like", label: "赞" },
+                    { key: "comment", label: "评论" },
+                ].map(item => (
+                    <button key={item.key} onClick={() => setNotifFilter(item.key as any)} style={{
+                        padding: "6px 16px",
+                        background: notifFilter === item.key ? "#f97316" : "#f5f5f5",
+                        color: notifFilter === item.key ? "#fff" : "#666",
+                        border: "none", borderRadius: 16, fontSize: 13, fontWeight: 500, cursor: "pointer"
+                    }}>{item.label}</button>
+                ))}
+            </div>
+
             <div style={{ flex: 1, overflowY: "auto", padding: 12 }}>
                 {notifLoading ? (
                     <div style={{ textAlign: "center", padding: 30, color: "#9ca3af", fontSize: 13 }}>加载中...</div>
-                ) : notifications.length === 0 ? (
+                ) : filteredNotifs.length === 0 ? (
                     <div style={{ textAlign: "center", padding: 40, color: "#9ca3af" }}>
                         <div style={{ fontSize: 36, marginBottom: 8 }}>🔔</div>
-                        <div style={{ fontSize: 13 }}>还没有任何通知</div>
+                        <div style={{ fontSize: 13 }}>
+                            {notifFilter === "like" ? "还没有收到点赞" : notifFilter === "comment" ? "还没有收到评论" : "还没有任何消息"}
+                        </div>
                     </div>
                 ) : (
-                    notifications.map((n) => {
-                        const typeMap: Record<string, { icon: string; text: string }> = {
-                            reply: { icon: "💬", text: "回复了你的帖子" },
-                            sub_reply: { icon: "💬", text: "回复了你的评论" },
-                            like: { icon: "❤️", text: "赞了你的帖子" },
-                            favorite: { icon: "⭐", text: "收藏了你的帖子" },
+                    filteredNotifs.map((n) => {
+                        const meta = typeMapAll[n.type] || { icon: "🔔", text: "有新的互动" };
+                        const isFollow = n.type === "follow";
+                        const tapNotif = async () => {
+                            if (!n.is_read) {
+                                await forumApi("mark_notification_read", { notificationId: n.id });
+                                setNotifications(prev => prev.map(x => x.id === n.id ? { ...x, is_read: true } : x));
+                                refreshUnread();
+                            }
+                            if (isFollow) {
+                                if (n.actor_username) viewUserByName(n.actor_username);
+                            } else if (!n.post_deleted) {
+                                openPostDetailFromId(n.post_id, mainTab === "messages" ? "notifications" : "notifications");
+                            }
                         };
-                        const meta = typeMap[n.type] || { icon: "🔔", text: "有新的互动" };
                         return (
                             <div
                                 key={n.id}
-                                onClick={async () => {
-                                    if (!n.is_read) {
-                                        await forumApi("mark_notification_read", { notificationId: n.id });
-                                        setNotifications(prev => prev.map(x => x.id === n.id ? { ...x, is_read: true } : x));
-                                        refreshUnread();
-                                    }
-                                    if (!n.post_deleted) openPostDetailFromId(n.post_id, "notifications");
-                                }}
+                                onClick={tapNotif}
                                 style={{
                                     display: "flex", gap: 10, padding: 12, marginBottom: 8,
                                     background: n.is_read ? "#fff" : "#fff7ed",
-                                    borderRadius: 12, cursor: n.post_deleted ? "default" : "pointer",
-                                    border: "1px solid #f0f0f0", opacity: n.post_deleted ? 0.6 : 1
+                                    borderRadius: 12, cursor: (isFollow || !n.post_deleted) ? "pointer" : "default",
+                                    border: "1px solid #f0f0f0", opacity: (!isFollow && n.post_deleted) ? 0.6 : 1
                                 }}>
                                 <Avatar url={n.actor_avatar} fallback="🌽" size={40} />
                                 <div style={{ flex: 1, minWidth: 0 }}>
@@ -2545,10 +2732,12 @@ export function ForumApp({ onClose, isAdmin = false, loginUsername = "", onViewU
                                         <span style={{ fontWeight: 600, color: "#1f2937" }}>{n.actor_name}</span>
                                         <span style={{ color: "#6b7280" }}> {meta.icon} {meta.text}</span>
                                     </div>
+                                    {!isFollow && (
                                     <div style={{
                                         fontSize: 13, color: "#374151", marginBottom: 3,
                                         overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap"
                                     }}>《{n.post_title}》</div>
+                                    )}
                                     {n.content && (
                                         <div style={{ fontSize: 12, color: "#6b7280", lineHeight: 1.5 }}>{n.content}</div>
                                     )}
@@ -2564,6 +2753,72 @@ export function ForumApp({ onClose, isAdmin = false, loginUsername = "", onViewU
                     })
                 )}
             </div>
+        </div>
+        );
+    };
+
+    // ============ 渲染：我（论坛内主页栈） ============
+    const renderMe = () => {
+        const current = profileChain[profileChain.length - 1] || loginUsername;
+        const isSelf = !current || current === loginUsername;
+        return (
+            <UserProfileApp
+                key={current + ":" + profileChain.length}
+                username={current}
+                isSelf={isSelf}
+                embedded
+                onOpenPost={async (postId) => {
+                    setDetailReturnView("notifications");
+                    const fresh = await fetchForumPostDetail(postId);
+                    if (fresh) {
+                        setCurrentPost(fresh);
+                        setView("postDetail");
+                    }
+                }}
+                onOpenUser={(u) => viewUserByName(u)}
+            />
+        );
+    };
+
+    const showBottomBar = view === "messages" || view === "me" || view === "sections";
+
+    const renderBottomBar = () => (
+        <div style={{
+            position: "absolute",
+            left: 0, right: 0, bottom: 0,
+            height: 56,
+            background: "#fff",
+            borderTop: "1px solid #f0f0f0",
+            display: "flex",
+            zIndex: 50,
+        }}>
+            {([
+                { key: "home", label: "首页", icon: "🏠" },
+                { key: "messages", label: "消息", icon: "💬", badge: unreadCount },
+                { key: "me", label: "我", icon: "👤" },
+            ] as const).map(t => {
+                const active = mainTab === t.key;
+                return (
+                    <button key={t.key} onClick={() => goMainTab(t.key)} style={{
+                        flex: 1, border: "none", background: "none", cursor: "pointer",
+                        display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center",
+                        gap: 2, position: "relative",
+                        color: active ? "#f97316" : "#9ca3af",
+                    }}>
+                        <span style={{ fontSize: 20, lineHeight: 1 }}>{t.icon}</span>
+                        <span style={{ fontSize: 11, fontWeight: active ? 600 : 400 }}>{t.label}</span>
+                        {t.key === "messages" && t.badge > 0 && (
+                            <span style={{
+                                position: "absolute", top: 4, right: "calc(50% - 22px)",
+                                background: "#ef4444", color: "#fff", fontSize: 9, fontWeight: 700,
+                                minWidth: 15, height: 15, borderRadius: 8,
+                                display: "flex", alignItems: "center", justifyContent: "center",
+                                padding: "0 4px"
+                            }}>{t.badge > 99 ? "99+" : t.badge}</span>
+                        )}
+                    </button>
+                );
+            })}
         </div>
     );
 
@@ -2581,7 +2836,11 @@ export function ForumApp({ onClose, isAdmin = false, loginUsername = "", onViewU
             case "search":
                 return renderSearch();
             case "notifications":
-                return renderNotifications();
+                return renderMessages();
+            case "messages":
+                return renderMessages();
+            case "me":
+                return renderMe();
             default:
                 return renderSections();
         }
@@ -2590,6 +2849,7 @@ export function ForumApp({ onClose, isAdmin = false, loginUsername = "", onViewU
     return (
         <>
             {content}
+            {showBottomBar && renderBottomBar()}
             {apiError && (
                 <div
                     onClick={() => setApiError(null)}
