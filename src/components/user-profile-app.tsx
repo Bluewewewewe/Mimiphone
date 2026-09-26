@@ -2,206 +2,139 @@
 
 import { useEffect, useMemo, useState } from "react";
 
-interface InviteCodeItem {
-  code: string;
-  status: string;
-  used_by?: string;
-  used_by_username?: string;
-  used_at?: string;
-  revoked_at?: string;
-}
-
-interface ForumPost {
-  id: string;
-  title: string;
-  content: string;
-  author: string;
-  authorAvatar: string;
-  section: string;
-  sectionName?: string;
-  replyCount: number;
-  viewCount: number;
-  likes: number;
-  favorites: number;
-  createdAt: string;
-  lastReplyAt: string;
-  isEssence: boolean;
-  isPinned: boolean;
-}
-
-interface UserProfileAppProps {
-  username: string;
-  isSelf?: boolean;
-  bio?: string;
-  onClose: () => void;
-}
-
-function loadForumPosts(): ForumPost[] {
-  if (typeof window === "undefined") return [];
-  try {
-    const raw = localStorage.getItem("forum_posts");
-    if (!raw) return [];
-    return JSON.parse(raw) as ForumPost[];
-  } catch {
-    return [];
-  }
-}
-
-interface ApiForumPost {
+interface ProfilePostCard {
   id: string;
   title: string;
   content: string;
   section: string;
   author_name: string;
+  author_avatar: string;
+  replyCount: number;
+  likes: number;
+  favorites: number;
   created_at: string;
-  is_pinned: boolean;
-  is_essence: boolean;
-  replyCount?: number;
-  likes?: number;
-  favorites?: number;
-  forum_replies?: { count: number }[];
-  forum_likes?: { count: number }[];
 }
 
-async function fetchAllForumPosts(): Promise<ForumPost[]> {
-  try {
-    const res = await fetch("/api/forum", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ action: "list", section: "all" })
-    });
-    const json = await res.json() as { success: boolean; data?: ApiForumPost[]; error?: string };
-    if (!json.success || !Array.isArray(json.data)) return loadForumPosts();
-    return json.data.map((p) => ({
-      id: p.id,
-      title: p.title,
-      content: p.content,
-      author: p.author_name,
-      authorAvatar: p.section === "announce" ? "📢" : "🌽",
-      section: p.section,
-      sectionName: p.section,
-      replyCount: p.replyCount ?? p.forum_replies?.[0]?.count ?? 0,
-      viewCount: 0,
-      likes: p.likes ?? p.forum_likes?.[0]?.count ?? 0,
-      favorites: p.favorites ?? 0,
-      createdAt: new Date(p.created_at).toLocaleString("zh-CN"),
-      lastReplyAt: new Date(p.created_at).toLocaleString("zh-CN"),
-      isEssence: p.is_essence,
-      isPinned: p.is_pinned
-    }));
-  } catch {
-    return loadForumPosts();
-  }
+interface UserProfileData {
+  id: string;
+  username: string;
+  displayName: string;
+  avatarUrl: string;
+  bio: string;
+  joinedAt: string;
 }
 
-function loadUserSet(keyBase: string, username: string): Set<string> {
-  if (typeof window === "undefined") return new Set();
-  try {
-    const raw = localStorage.getItem(`${keyBase}_${username}`);
-    if (!raw) return new Set();
-    return new Set(JSON.parse(raw) as string[]);
-  } catch {
-    return new Set();
-  }
+interface UserProfileAppProps {
+  username: string;
+  isSelf?: boolean;
+  onClose: () => void;
+  onOpenPost?: (postId: string) => void;
 }
 
-function loadCoins(username: string): number {
-  if (typeof window === "undefined") return 1000;
-  try {
-    const raw = localStorage.getItem(`mimi_coins_${username}`);
-    return raw ? Number(raw) : 1000;
-  } catch {
-    return 1000;
-  }
+async function forumApi(action: string, payload: Record<string, unknown> = {}) {
+  const token = typeof window !== "undefined" ? localStorage.getItem("auth_token") : null;
+  const res = await fetch("/api/forum", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ action, authToken: token, ...payload }),
+  });
+  return res.json() as Promise<{ success: boolean; data?: unknown; error?: string }>;
 }
 
 function formatTime(iso: string): string {
-  const date = new Date(iso);
-  return `${date.getMonth() + 1}/${date.getDate()} ${date.getHours().toString().padStart(2, "0")}:${date.getMinutes().toString().padStart(2, "0")}`;
+  if (!iso) return "";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
+  return d.toLocaleString("zh-CN", {
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
 }
 
-export default function UserProfileApp({ username, isSelf = false, bio = "", onClose }: UserProfileAppProps) {
-  const [activeTab, setActiveTab] = useState<"posts" | "likes" | "favorites" | "invites">("posts");
-  const [posts, setPosts] = useState<ForumPost[]>([]);
-  const [likedIds, setLikedIds] = useState<Set<string>>(new Set());
-  const [favoritedIds, setFavoritedIds] = useState<Set<string>>(new Set());
-  const [coins, setCoins] = useState<number>(1000);
-  const [inviteCodes, setInviteCodes] = useState<InviteCodeItem[]>([]);
-  const [copiedCode, setCopiedCode] = useState<string | null>(null);
-  const [avatarUrl, setAvatarUrl] = useState<string>("");
-  const [uploading, setUploading] = useState<boolean>(false);
+const SECTION_LABELS: Record<string, string> = {
+  general: "综合",
+  cp: "CP讨论",
+  fanfic: "同人文",
+  creative: "同人创作",
+  event: "活动",
+  announce: "公告",
+  "bug-report": "Bug反馈",
+};
+
+export default function UserProfileApp({ username, isSelf = false, onClose, onOpenPost }: UserProfileAppProps) {
+  const [profile, setProfile] = useState<UserProfileData | null>(null);
+  const [activeTab, setActiveTab] = useState<"posts" | "likes" | "favorites">("posts");
+  const [posts, setPosts] = useState<ProfilePostCard[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState("");
+  const [avatarUploading, setAvatarUploading] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
     async function load() {
+      setLoading(true);
+      setLoadError("");
       try {
-        const res = await fetch("/api/auth", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ action: "get_profile", username }),
-        });
-        const json = await res.json() as { success?: boolean; profile?: { avatarUrl?: string } };
-        if (!cancelled && json.success && json.profile) setAvatarUrl(json.profile.avatarUrl || "");
-      } catch {
-        // ignore
-      }
-      const data = await fetchAllForumPosts();
-      const token = typeof window !== "undefined" ? localStorage.getItem("auth_token") : null;
-      let codes: InviteCodeItem[] = [];
-      if (token) {
-        try {
-          const res = await fetch("/api/auth", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ action: "list_my_invite_codes", authToken: token }),
-          });
-          const json = await res.json() as { success?: boolean; data?: InviteCodeItem[] };
-          if (json.success) codes = json.data || [];
-        } catch {
-          // ignore
+        const res = await forumApi("user_profile", { username });
+        if (!res.success || !res.data) {
+          if (!cancelled) setLoadError(res.error || "用户不存在");
+          return;
         }
-      }
-      if (!cancelled) {
-        setPosts(data);
-        setLikedIds(loadUserSet("forum_likes", username));
-        setFavoritedIds(loadUserSet("forum_favorites", username));
-        setCoins(loadCoins(username));
-        setInviteCodes(codes);
+        const p = res.data as UserProfileData;
+        if (cancelled) return;
+        setProfile(p);
+
+        const pr = await forumApi("user_posts", { userId: p.id });
+        if (!cancelled && pr.success) setPosts((pr.data as ProfilePostCard[]) || []);
+      } catch {
+        if (!cancelled) setLoadError("加载失败，请稍后重试");
+      } finally {
+        if (!cancelled) setLoading(false);
       }
     }
     load();
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, [username]);
 
-  const userPosts = useMemo(
-    () => posts.filter((p) => p.author === username).sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()),
-    [posts, username]
-  );
-
-  const likedPosts = useMemo(
-    () => posts.filter((p) => likedIds.has(p.id)).sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()),
-    [posts, likedIds]
-  );
-
-  const favoritePosts = useMemo(
-    () => posts.filter((p) => favoritedIds.has(p.id)).sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()),
-    [posts, favoritedIds]
-  );
-
-  const isTeacher = false; // TODO: 后续接入真实身份系统
+  async function switchTab(tab: "posts" | "likes" | "favorites") {
+    if (!profile) return;
+    setActiveTab(tab);
+    if (tab === "posts") {
+      const r = await forumApi("user_posts", { userId: profile.id });
+      if (r.success) setPosts((r.data as ProfilePostCard[]) || []);
+    } else if (tab === "likes") {
+      const r = await forumApi("user_likes", { userId: profile.id });
+      if (r.success) setPosts((r.data as ProfilePostCard[]) || []);
+      else alert(r.error || "加载失败");
+    } else {
+      const r = await forumApi("user_favorites", { userId: profile.id });
+      if (r.success) setPosts((r.data as ProfilePostCard[]) || []);
+      else alert(r.error || "加载失败");
+    }
+  }
 
   const handlePickAvatar = () => {
+    if (!isSelf) return;
     const input = document.createElement("input");
     input.type = "file";
     input.accept = "image/jpeg,image/png,image/webp,image/gif";
     input.onchange = async () => {
       const file = input.files?.[0];
       if (!file) return;
-      if (file.size > 5 * 1024 * 1024) { alert("图片超过 5MB，无法上传"); return; }
-      if (file.size > 1 * 1024 * 1024) { if (!confirm("图片超过 1MB，建议压缩后再上传，是否继续？")) return; }
+      if (file.size > 2 * 1024 * 1024) {
+        alert("头像图片超过 2MB，无法上传，请压缩或换一张");
+        return;
+      }
       const token = localStorage.getItem("auth_token");
-      if (!token) { alert("请先登录"); return; }
-      setUploading(true);
+      if (!token) {
+        alert("请先登录");
+        return;
+      }
+      setAvatarUploading(true);
       try {
         const fd = new FormData();
         fd.append("file", file);
@@ -217,223 +150,300 @@ export default function UserProfileApp({ username, isSelf = false, bio = "", onC
         });
         const svj = await sv.json() as { success?: boolean; error?: string };
         if (!svj.success) throw new Error(svj.error || "保存失败");
-        setAvatarUrl(upj.url);
+        setProfile((prev) => (prev ? { ...prev, avatarUrl: upj.url as string } : prev));
       } catch (e) {
         alert(e instanceof Error ? e.message : "上传失败");
       } finally {
-        setUploading(false);
+        setAvatarUploading(false);
       }
     };
     input.click();
   };
 
-  const renderPostItem = (post: ForumPost) => (
-    <div key={post.id} className="bg-white/60 backdrop-blur-md rounded-xl p-3 mb-2 border border-white/40">
-      <div className="flex items-center gap-2 mb-1">
-        <span className="text-xs px-2 py-0.5 rounded-full bg-primary/10 text-primary font-medium">
-          {post.sectionName || post.section}
+  const displayName = profile?.displayName || username;
+
+  const renderPostCard = (post: ProfilePostCard) => (
+    <div
+      key={post.id}
+      onClick={() => onOpenPost?.(post.id)}
+      style={{
+        background: "#fff",
+        borderRadius: 12,
+        padding: 12,
+        marginBottom: 8,
+        border: "1px solid #f0f0f0",
+        cursor: onOpenPost ? "pointer" : "default",
+      }}
+    >
+      <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 6 }}>
+        <span
+          style={{
+            fontSize: 11,
+            padding: "2px 8px",
+            borderRadius: 10,
+            background: "#fff7ed",
+            color: "#ea580c",
+            fontWeight: 500,
+          }}
+        >
+          {SECTION_LABELS[post.section] || post.section}
         </span>
-        {post.isEssence && <span className="text-xs px-2 py-0.5 rounded-full bg-amber-100 text-amber-700">精华</span>}
+        <span style={{ fontSize: 11, color: "#9ca3af", marginLeft: "auto" }}>
+          {formatTime(post.created_at)}
+        </span>
       </div>
-      <h3 className="font-semibold text-foreground text-sm mb-1 line-clamp-2">{post.title}</h3>
-      <p className="text-xs text-muted-foreground line-clamp-2 mb-2">{post.content}</p>
-      <div className="flex items-center justify-between text-[10px] text-muted-foreground">
-        <span>{formatTime(post.createdAt)}</span>
-        <div className="flex items-center gap-3">
-          <span>👁 {post.viewCount}</span>
-          <span>👍 {post.likes}</span>
-          <span>💬 {post.replyCount}</span>
-        </div>
+      <h3
+        style={{
+          fontSize: 14,
+          fontWeight: 600,
+          color: "#1f2937",
+          marginBottom: 4,
+          overflow: "hidden",
+          textOverflow: "ellipsis",
+          whiteSpace: "nowrap",
+        }}
+      >
+        {post.title}
+      </h3>
+      <p
+        style={{
+          fontSize: 12,
+          color: "#6b7280",
+          lineHeight: 1.5,
+          marginBottom: 8,
+          display: "-webkit-box",
+          WebkitLineClamp: 2,
+          WebkitBoxOrient: "vertical",
+          overflow: "hidden",
+        }}
+      >
+        {post.content}
+      </p>
+      <div style={{ display: "flex", gap: 14, fontSize: 12, color: "#9ca3af" }}>
+        <span>💬 {post.replyCount}</span>
+        <span>❤️ {post.likes}</span>
+        <span>⭐ {post.favorites}</span>
       </div>
     </div>
   );
 
+  const emptyText = useMemo(() => {
+    if (activeTab === "posts") return isSelf ? "还没有发布过帖子" : "TA还没有发布过帖子";
+    if (activeTab === "likes") return "还没有点赞过帖子";
+    return "还没有收藏过帖子";
+  }, [activeTab, isSelf]);
+
   return (
-    <div className="app-page flex flex-col h-full bg-gradient-to-b from-background to-background/95">
-      {/* Header */}
-      <div className="flex items-center justify-between px-4 pt-6 pb-2 border-b border-border/30 bg-white/40 backdrop-blur-md shrink-0">
+    <div style={{ height: "100%", display: "flex", flexDirection: "column", background: "#f5f5f5" }}>
+      <div
+        style={{
+          background: "linear-gradient(135deg, #f97316 0%, #fb923c 100%)",
+          padding: "16px 20px",
+          color: "#fff",
+          display: "flex",
+          alignItems: "center",
+          gap: 12,
+          flexShrink: 0,
+        }}
+      >
         <button
           onClick={onClose}
-          className="w-8 h-8 flex items-center justify-center rounded-full bg-white/50 active:scale-90 transition-transform"
+          style={{
+            background: "rgba(255,255,255,0.2)",
+            border: "none",
+            color: "#fff",
+            width: 32,
+            height: 32,
+            borderRadius: 8,
+            fontSize: 18,
+            cursor: "pointer",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+          }}
         >
           ←
         </button>
-        <span className="font-semibold text-foreground">{isSelf ? "我的主页" : "用户主页"}</span>
-        <div className="w-8" />
-      </div>
-
-      {/* User info */}
-      <div className="px-4 py-5 bg-white/50 backdrop-blur-md">
-        <div className="flex items-center gap-4">
-          <button
-            type="button"
-            onClick={isSelf ? handlePickAvatar : undefined}
-            className={`relative w-16 h-16 rounded-full bg-gradient-to-br from-primary/30 to-primary/10 flex items-center justify-center text-3xl border-2 border-white/60 shadow-sm overflow-hidden shrink-0 ${isSelf ? "cursor-pointer active:scale-95 transition-transform" : "cursor-default"}`}
-            title={isSelf ? (uploading ? "上传中…" : "点击更换头像") : ""}
-          >
-            {avatarUrl ? (
-              <img src={avatarUrl} alt={username} className="w-full h-full object-cover" />
-            ) : (
-              <span>👤</span>
-            )}
-            {isSelf && (
-              <span className="absolute inset-x-0 bottom-0 bg-black/45 text-white text-[9px] leading-tight py-0.5 text-center">
-                {uploading ? "上传中" : "更换"}
-              </span>
-            )}
-          </button>
-          <div className="flex-1">
-            <h2 className="text-lg font-bold text-foreground">{username}</h2>
-            <div className="flex items-center gap-3 mt-1">
-              <span className="text-xs px-2 py-1 rounded-full bg-amber-100 text-amber-700 font-medium">
-                🪙 {coins} 米米币
-              </span>
-              {isTeacher && <span className="text-xs px-2 py-1 rounded-full bg-primary/10 text-primary">米老师</span>}
-            </div>
-            {bio ? (
-              <p className="mt-2 text-xs text-muted-foreground leading-relaxed whitespace-pre-wrap">{bio}</p>
-            ) : (
-              <p className="mt-2 text-xs text-muted-foreground/60 italic">暂无个人简介</p>
-            )}
-          </div>
+        <div style={{ flex: 1, fontSize: 16, fontWeight: 600 }}>
+          {isSelf ? "我的主页" : "用户主页"}
         </div>
       </div>
 
-      {/* Tabs (self only) */}
-      {isSelf ? (
-        <div className="flex items-center gap-1 px-3 py-2 border-b border-border/20 bg-white/30 shrink-0">
-          {[
-            { key: "posts", label: "我的帖子" },
-            { key: "likes", label: "我的点赞" },
-            { key: "favorites", label: "我的收藏" },
-            { key: "invites", label: "我的邀请码" },
-          ].map((tab) => (
+      <div style={{ flex: 1, overflowY: "auto" }}>
+        <div
+          style={{
+            margin: 12,
+            background: "#fff",
+            borderRadius: 16,
+            padding: 18,
+            border: "1px solid #f0f0f0",
+          }}
+        >
+          <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
+            <button
+              type="button"
+              onClick={handlePickAvatar}
+              title={isSelf ? (avatarUploading ? "上传中…" : "点击更换头像") : ""}
+              style={{
+                position: "relative",
+                width: 68,
+                height: 68,
+                borderRadius: "50%",
+                overflow: "hidden",
+                border: "3px solid #fff",
+                boxShadow: "0 2px 10px rgba(0,0,0,0.12)",
+                background: "linear-gradient(135deg,#fde68a,#fca5a5)",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                fontSize: 30,
+                cursor: isSelf ? "pointer" : "default",
+                padding: 0,
+                flexShrink: 0,
+              }}
+            >
+              {profile?.avatarUrl ? (
+                <img
+                  src={profile.avatarUrl}
+                  alt={displayName}
+                  style={{ width: "100%", height: "100%", objectFit: "cover" }}
+                />
+              ) : (
+                <span>🌽</span>
+              )}
+              {isSelf && (
+                <span
+                  style={{
+                    position: "absolute",
+                    insetInline: 0,
+                    bottom: 0,
+                    background: "rgba(0,0,0,0.45)",
+                    color: "#fff",
+                    fontSize: 9,
+                    lineHeight: "1.4",
+                    paddingTop: 2,
+                    paddingBottom: 2,
+                    textAlign: "center",
+                  }}
+                >
+                  {avatarUploading ? "上传中" : "更换"}
+                </span>
+              )}
+            </button>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <h2
+                style={{
+                  fontSize: 18,
+                  fontWeight: 700,
+                  color: "#1f2937",
+                  overflow: "hidden",
+                  textOverflow: "ellipsis",
+                  whiteSpace: "nowrap",
+                }}
+              >
+                {displayName}
+              </h2>
+              {profile?.username && profile.username !== displayName && (
+                <p style={{ fontSize: 12, color: "#9ca3af", marginTop: 2 }}>@{profile.username}</p>
+              )}
+              {profile?.joinedAt && (
+                <p style={{ fontSize: 11, color: "#9ca3af", marginTop: 4 }}>
+                  📅 {new Date(profile.joinedAt).toLocaleDateString("zh-CN")} 加入
+                </p>
+              )}
+            </div>
+          </div>
+
+          <div
+            style={{
+              marginTop: 14,
+              paddingTop: 12,
+              borderTop: "1px solid #f3f4f6",
+              fontSize: 13,
+              color: "#4b5563",
+              lineHeight: 1.7,
+              whiteSpace: "pre-wrap",
+              wordBreak: "break-word",
+            }}
+          >
+            {profile?.bio ? profile.bio : <span style={{ color: "#c0c0c0", fontStyle: "italic" }}>暂无个人简介</span>}
+          </div>
+        </div>
+
+        <div
+          style={{
+            display: "flex",
+            gap: 6,
+            padding: "0 12px",
+            marginBottom: 8,
+          }}
+        >
+          {(
+            [
+              { key: "posts", label: "帖子" },
+              ...(isSelf
+                ? [
+                    { key: "likes", label: "点赞" },
+                    { key: "favorites", label: "收藏" },
+                  ]
+                : []),
+            ] as { key: "posts" | "likes" | "favorites"; label: string }[]
+          ).map((tab) => (
             <button
               key={tab.key}
-              onClick={() => setActiveTab(tab.key as "posts" | "likes" | "favorites" | "invites")}
-              className={`flex-1 py-2 text-xs font-medium rounded-lg transition-colors ${
-                activeTab === tab.key
-                  ? "bg-primary text-primary-foreground"
-                  : "bg-white/40 text-muted-foreground hover:bg-white/60"
-              }`}
+              onClick={() => switchTab(tab.key)}
+              style={{
+                flex: 1,
+                padding: "9px 0",
+                fontSize: 13,
+                fontWeight: 500,
+                borderRadius: 10,
+                border: "none",
+                background: activeTab === tab.key ? "#f97316" : "#fff",
+                color: activeTab === tab.key ? "#fff" : "#6b7280",
+                cursor: "pointer",
+              }}
             >
               {tab.label}
             </button>
           ))}
         </div>
-      ) : null}
 
-      {/* Content */}
-      <div className="flex-1 overflow-y-auto p-3">
-        {isTeacher && !isSelf && (
-          <div className="mb-3">
-            <h3 className="text-sm font-semibold text-foreground mb-2">上的课</h3>
-            <div className="text-xs text-muted-foreground bg-white/40 rounded-lg p-3">暂无课程</div>
-            <h3 className="text-sm font-semibold text-foreground mb-2 mt-3">正在上的课</h3>
-            <div className="text-xs text-muted-foreground bg-white/40 rounded-lg p-3">暂无课程</div>
-          </div>
-        )}
-
-        {!isSelf && <h3 className="text-sm font-semibold text-foreground mb-2">发布的帖子</h3>}
-
-        {activeTab === "posts" && (
-          <>
-            {userPosts.length === 0 ? (
-              <div className="text-center text-xs text-muted-foreground py-8 bg-white/40 rounded-xl">还没有发布过帖子</div>
-            ) : (
-              userPosts.map(renderPostItem)
-            )}
-          </>
-        )}
-
-        {activeTab === "likes" && (
-          <>
-            {likedPosts.length === 0 ? (
-              <div className="text-center text-xs text-muted-foreground py-8 bg-white/40 rounded-xl">还没有点赞过帖子</div>
-            ) : (
-              likedPosts.map(renderPostItem)
-            )}
-          </>
-        )}
-
-        {activeTab === "favorites" && (
-          <>
-            {favoritePosts.length === 0 ? (
-              <div className="text-center text-xs text-muted-foreground py-8 bg-white/40 rounded-xl">还没有收藏过帖子</div>
-            ) : (
-              favoritePosts.map(renderPostItem)
-            )}
-          </>
-        )}
-
-        {activeTab === "invites" && (
-          <>
-            {(() => {
-              const available = inviteCodes.filter((c) => c.status === "active");
-              const used = inviteCodes.filter((c) => c.status === "used");
-              const revoked = inviteCodes.filter((c) => c.status === "revoked");
-              const copy = (code: string) => {
-                void navigator.clipboard.writeText(code);
-                setCopiedCode(code);
-                setTimeout(() => setCopiedCode(null), 1500);
-              };
-              return (
-                <div className="space-y-4">
-                  <div className="rounded-xl bg-gradient-to-r from-primary/20 to-primary/5 p-4 text-center border border-primary/20">
-                    <div className="text-3xl font-bold text-foreground">{available.length}</div>
-                    <div className="text-xs text-muted-foreground">还能邀请 {available.length} 人</div>
-                  </div>
-
-                  {available.length > 0 && (
-                    <div>
-                      <h3 className="text-sm font-semibold text-foreground mb-2">可用邀请码</h3>
-                      <div className="flex flex-wrap gap-2">
-                        {available.map((c) => (
-                          <button
-                            key={c.code}
-                            onClick={() => copy(c.code)}
-                            className="min-h-[44px] rounded-lg bg-primary/10 px-3 py-2 text-sm font-mono text-primary border border-primary/20 active:scale-95 transition-transform"
-                          >
-                            {c.code} {copiedCode === c.code ? "✅已复制" : "📋"}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-
-                  {used.length > 0 && (
-                    <div>
-                      <h3 className="text-sm font-semibold text-foreground mb-2">已使用</h3>
-                      <div className="space-y-2">
-                        {used.map((c) => (
-                          <div key={c.code} className="rounded-lg bg-white/40 p-2 text-xs text-muted-foreground">
-                            <span className="font-mono text-foreground">{c.code}</span>
-                            <span className="mx-2">→</span>
-                            <span>{c.used_by_username || c.used_by || "未知用户"}</span>
-                            <span className="ml-2">{c.used_at ? formatTime(c.used_at) : ""}</span>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-
-                  {revoked.length > 0 && (
-                    <div>
-                      <h3 className="text-sm font-semibold text-foreground mb-2">已作废</h3>
-                      <div className="flex flex-wrap gap-2">
-                        {revoked.map((c) => (
-                          <span key={c.code} className="text-xs font-mono text-muted-foreground line-through">
-                            {c.code}
-                          </span>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                </div>
-              );
-            })()}
-          </>
-        )}
+        <div style={{ padding: "0 12px 16px" }}>
+          {loadError ? (
+            <div
+              style={{
+                textAlign: "center",
+                fontSize: 13,
+                color: "#9ca3af",
+                padding: "30px 0",
+                background: "#fff",
+                borderRadius: 12,
+              }}
+            >
+              {loadError}
+            </div>
+          ) : loading ? (
+            <div style={{ textAlign: "center", fontSize: 13, color: "#9ca3af", padding: "30px 0" }}>
+              加载中...
+            </div>
+          ) : posts.length === 0 ? (
+            <div
+              style={{
+                textAlign: "center",
+                fontSize: 13,
+                color: "#9ca3af",
+                padding: "30px 0",
+                background: "#fff",
+                borderRadius: 12,
+              }}
+            >
+              {emptyText}
+            </div>
+          ) : (
+            posts.map(renderPostCard)
+          )}
+        </div>
       </div>
     </div>
   );

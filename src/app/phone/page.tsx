@@ -2008,6 +2008,7 @@ export default function PhonePage() {
     const [dockAppIds, setDockAppIds] = useState<string[]>(DEFAULT_DOCK_APP_IDS);
     const [isDockReplacing, setIsDockReplacing] = useState(false);
     const [viewingUserProfile, setViewingUserProfile] = useState<string | null>(null);
+    const [forumInitialPostId, setForumInitialPostId] = useState<string | null>(null);
     const [wallpaper, setWallpaper] = useState<string>("default");
     const [knobStyle, setKnobStyle] = useState<string>("circle");
     const [changePasswordCurrent, setChangePasswordCurrent] = useState("");
@@ -11138,6 +11139,8 @@ export default function PhonePage() {
                 onClose={() => setCurrentApp(null)}
                 isAdmin={isAdmin}
                 loginUsername={loginUsername}
+                initialPostId={forumInitialPostId}
+                onConsumeInitialPost={() => setForumInitialPostId(null)}
                 onViewUserProfile={(username) => {
                     setViewingUserProfile(username);
                     setCurrentApp("user-profile");
@@ -11151,9 +11154,13 @@ export default function PhonePage() {
             <UserProfileApp
                 username={viewingUserProfile || loginUsername}
                 isSelf={viewingUserProfile === loginUsername || !viewingUserProfile}
-                bio={userBio}
                 onClose={() => {
                     setViewingUserProfile(null);
+                    setCurrentApp("forum");
+                }}
+                onOpenPost={(postId) => {
+                    setViewingUserProfile(null);
+                    setForumInitialPostId(postId);
                     setCurrentApp("forum");
                 }}
             />

@@ -8,6 +8,8 @@ interface ForumPost {
     content: string;
     author: string;
     authorAvatar: string;
+    avatarUrl?: string;
+    authorId?: string;
     section: string;
     replyCount: number;
     viewCount: number;
@@ -29,6 +31,8 @@ interface ForumReply {
     content: string;
     author: string;
     authorAvatar: string;
+    avatarUrl?: string;
+    authorId?: string;
     createdAt: string;
     isPinned: boolean;
     isDeleted: boolean;
@@ -41,6 +45,8 @@ interface ForumSubReply {
     content: string;
     author: string;
     authorAvatar: string;
+    avatarUrl?: string;
+    authorId?: string;
     createdAt: string;
     replyTo: string;
 }
@@ -152,6 +158,31 @@ function formatTime(iso: string): string {
     });
 }
 
+// 头像：真实上传图优先，无图时用 emoji 占位；可点击进主页
+function Avatar({ url, fallback, size = 36, onClick, ring }: {
+    url?: string; fallback: string; size?: number; onClick?: () => void; ring?: boolean;
+}) {
+    const hasUrl = !!url;
+    return (
+        <div
+            onClick={onClick}
+            style={{
+                width: size, height: size, borderRadius: "50%",
+                overflow: "hidden", flexShrink: 0,
+                display: "flex", alignItems: "center", justifyContent: "center",
+                background: hasUrl ? "#fff" : "linear-gradient(135deg,#fde68a,#fca5a5)",
+                fontSize: size * 0.5,
+                cursor: onClick ? "pointer" : "default",
+                border: ring ? "2px solid rgba(255,255,255,0.8)" : "none",
+                boxShadow: "0 1px 4px rgba(0,0,0,0.08)"
+            }}>
+            {hasUrl
+                ? <img src={url} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                : <span>{fallback}</span>}
+        </div>
+    );
+}
+
 function mapApiReplyToReply(r: ApiReply): ForumReply {
     return {
         id: r.id,
@@ -159,6 +190,8 @@ function mapApiReplyToReply(r: ApiReply): ForumReply {
         content: r.content,
         author: r.author_name,
         authorAvatar: r.is_admin ? "👑" : "🌽",
+        avatarUrl: (r as any).author_avatar || "",
+        authorId: r.author_id,
         createdAt: formatTime(r.created_at),
         isPinned: false,
         isDeleted: false,
@@ -186,6 +219,8 @@ function mapApiPostToPost(p: ApiPost): ForumPost {
                 content: sr.content,
                 author: sr.author_name,
                 authorAvatar: sr.is_admin ? "👑" : "",
+                avatarUrl: (sr as any).author_avatar || "",
+                authorId: sr.author_id,
                 createdAt: formatTime(sr.created_at),
                 replyTo: r.author,
             }));
@@ -224,6 +259,8 @@ function mapApiPostToPost(p: ApiPost): ForumPost {
         content: p.content,
         author: p.author_name,
         authorAvatar: p.author_name === "官方通知" || p.section === "announce" ? "📢" : "🌽",
+        avatarUrl: (p as any).author_avatar || "",
+        authorId: p.author_id,
         section: p.section,
         replyCount,
         viewCount: 0,
@@ -279,10 +316,12 @@ interface ForumAppProps {
     isAdmin?: boolean;
     loginUsername?: string;
     onViewUserProfile?: (username: string) => void;
+    initialPostId?: string | null;
+    onConsumeInitialPost?: () => void;
 }
 
-export function ForumApp({ onClose, isAdmin = false, loginUsername = "", onViewUserProfile }: ForumAppProps = {}) {
-    const [view, setView] = useState<"sections" | "posts" | "postDetail" | "newPost" | "search">("sections");
+export function ForumApp({ onClose, isAdmin = false, loginUsername = "", onViewUserProfile, initialPostId = null, onConsumeInitialPost }: ForumAppProps = {}) {
+    const [view, setView] = useState<"sections" | "posts" | "postDetail" | "newPost" | "search" | "notifications">("sections");
     const [currentSection, setCurrentSection] = useState<string | null>(null);
     const [currentPost, setCurrentPost] = useState<ForumPost | null>(null);
     const [posts, setPosts] = useState<ForumPost[]>([]);
@@ -566,6 +605,60 @@ export function ForumApp({ onClose, isAdmin = false, loginUsername = "", onViewU
         } catch {}
     }, [customSections]);
 
+    // ========== 通知状态 ==========
+    const [unreadCount, setUnreadCount] = useState(0);
+    const [notifications, setNotifications] = useState<any[]>([]);
+    const [notifLoading, setNotifLoading] = useState(false);
+    const [detailReturnView, setDetailReturnView] = useState<"sections" | "posts" | "notifications">("sections");
+
+    const refreshUnread = useCallback(async () => {
+        if (!getAuthToken()) return;
+        try {
+            const res = await forumApi("unread_count");
+            if (res.success) setUnreadCount((res.data as any)?.count || 0);
+        } catch {}
+    }, []);
+
+    useEffect(() => {
+        refreshUnread();
+        const t = setInterval(refreshUnread, 30000);
+        return () => clearInterval(t);
+    }, [refreshUnread]);
+
+    // 从主页/外部带帖子 ID 进入时，直接打开该帖详情
+    useEffect(() => {
+        if (initialPostId) {
+            const id = initialPostId;
+            onConsumeInitialPost?.();
+            openPostDetailFromId(id, "sections");
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [initialPostId]);
+
+    const openNotifications = async () => {
+        setNotifLoading(true);
+        setView("notifications");
+        try {
+            const res = await forumApi("notifications");
+            if (res.success) setNotifications((res.data as any[]) || []);
+        } finally {
+            setNotifLoading(false);
+        }
+    };
+
+    // 从通知/主页打开某帖详情
+    const openPostDetailFromId = async (postId: string, returnTo: "sections" | "posts" | "notifications") => {
+        setDetailReturnView(returnTo);
+        const fresh = await fetchForumPostDetail(postId);
+        if (fresh) {
+            setCurrentPost(fresh);
+            setView("postDetail");
+            refreshUnread();
+        } else {
+            alert("帖子不存在或已被删除");
+        }
+    };
+
     const incrementViewCount = useCallback((postId: string): ForumPost | undefined => {
         let updated: ForumPost | undefined;
         setPosts(prev => prev.map(p => {
@@ -834,6 +927,25 @@ export function ForumApp({ onClose, isAdmin = false, loginUsername = "", onViewU
                 color: "#fff",
                 position: "relative"
             }}>
+                {loginUsername && (
+                    <button
+                        onClick={() => onViewUserProfile?.(loginUsername)}
+                        style={{
+                            position: "absolute",
+                            top: 28,
+                            right: onClose ? 76 : 16,
+                            background: "rgba(255,255,255,0.25)",
+                            border: "1px solid rgba(255,255,255,0.4)",
+                            borderRadius: 8,
+                            padding: "4px 10px",
+                            color: "#fff",
+                            fontSize: 13,
+                            cursor: "pointer",
+                            backdropFilter: "blur(4px)"
+                        }}>
+                        我的
+                    </button>
+                )}
                 {onClose && (
                     <button
                         onClick={onClose}
@@ -853,7 +965,31 @@ export function ForumApp({ onClose, isAdmin = false, loginUsername = "", onViewU
                         退出
                     </button>
                 )}
-                <div style={{ fontSize: 20, fontWeight: 700, marginBottom: 4 }}>💬 社区论坛</div>
+                <div style={{ fontSize: 20, fontWeight: 700, marginBottom: 4, display: "flex", alignItems: "center", gap: 10 }}>
+                    💬 社区论坛
+                    <button
+                        onClick={openNotifications}
+                        style={{
+                            position: "relative",
+                            background: "rgba(255,255,255,0.25)",
+                            border: "1px solid rgba(255,255,255,0.4)",
+                            borderRadius: 20,
+                            padding: "4px 10px",
+                            color: "#fff", fontSize: 14, cursor: "pointer", lineHeight: 1
+                        }}>
+                        🔔
+                        {unreadCount > 0 && (
+                            <span style={{
+                                position: "absolute", top: -4, right: -6,
+                                background: "#ef4444", color: "#fff",
+                                fontSize: 10, fontWeight: 700,
+                                minWidth: 16, height: 16, borderRadius: 8,
+                                display: "flex", alignItems: "center", justifyContent: "center",
+                                padding: "0 4px", border: "1.5px solid #fb923c"
+                            }}>{unreadCount > 99 ? "99+" : unreadCount}</span>
+                        )}
+                    </button>
+                </div>
                 <div style={{ fontSize: 12, opacity: 0.9 }}>甜玉米粉丝交流社区</div>
             </div>
 
@@ -1270,7 +1406,8 @@ export function ForumApp({ onClose, isAdmin = false, loginUsername = "", onViewU
 
                                 {/* 作者信息 */}
                                 <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
-                                    <span style={{ fontSize: 18 }}>{post.authorAvatar}</span>
+                                    <Avatar url={post.avatarUrl} fallback={post.authorAvatar} size={32}
+                                      onClick={onViewUserProfile && post.authorId ? () => onViewUserProfile?.(post.author) : undefined} />
                                     <span
                                       style={{ fontSize: 13, color: "#6b7280", fontWeight: 500, cursor: onViewUserProfile ? "pointer" : "default" }}
                                       onClick={(e) => {
@@ -1346,8 +1483,9 @@ export function ForumApp({ onClose, isAdmin = false, loginUsername = "", onViewU
                 }}>
                     <button
                         onClick={() => {
-                            setView("posts");
+                            setView(detailReturnView);
                             setCurrentPost(null);
+                            if (detailReturnView === "notifications") refreshUnread();
                         }}
                         style={{
                             background: "rgba(255,255,255,0.2)",
@@ -1449,8 +1587,10 @@ export function ForumApp({ onClose, isAdmin = false, loginUsername = "", onViewU
                             )}
                         </div>
                         <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 14 }}>
-                            <span style={{ fontSize: 20 }}>{currentPost.authorAvatar}</span>
-                            <span style={{ fontSize: 14, color: "#6b7280", fontWeight: 500 }}>{currentPost.author}</span>
+                            <Avatar url={currentPost.avatarUrl} fallback={currentPost.authorAvatar} size={36}
+                              onClick={onViewUserProfile && currentPost.authorId ? () => onViewUserProfile?.(currentPost.author) : undefined} />
+                            <span style={{ fontSize: 14, color: "#6b7280", fontWeight: 500, cursor: "pointer" }}
+                              onClick={() => onViewUserProfile?.(currentPost.author)}>{currentPost.author}</span>
                             <span style={{ fontSize: 12, color: "#d1d5db" }}>·</span>
                             <span style={{ fontSize: 12, color: "#9ca3af" }}>{currentPost.createdAt}</span>
                         </div>
@@ -1577,10 +1717,12 @@ export function ForumApp({ onClose, isAdmin = false, loginUsername = "", onViewU
                                         }}>📌 楼主置顶</div>
                                     )}
                                     <div style={{ display: "flex", gap: 10, marginBottom: 8 }}>
-                                        <span style={{ fontSize: 18 }}>{reply.authorAvatar}</span>
+                                        <Avatar url={reply.avatarUrl} fallback={reply.authorAvatar || "🌽"} size={34}
+                                          onClick={onViewUserProfile && reply.authorId ? () => onViewUserProfile?.(reply.author) : undefined} />
                                         <div style={{ flex: 1 }}>
                                             <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
-                                                <span style={{ fontSize: 14, color: "#6b7280", fontWeight: 500 }}>{reply.author}</span>
+                                                <span style={{ fontSize: 14, color: "#6b7280", fontWeight: 500, cursor: "pointer" }}
+                                                  onClick={() => onViewUserProfile?.(reply.author)}>{reply.author}</span>
                                                 <span style={{ fontSize: 12, color: "#d1d5db" }}>·</span>
                                                 <span style={{ fontSize: 12, color: "#9ca3af" }}>{reply.createdAt}</span>
                                             </div>
@@ -2305,7 +2447,8 @@ export function ForumApp({ onClose, isAdmin = false, loginUsername = "", onViewU
                                     {post.title}
                                 </div>
                                 <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
-                                    <span style={{ fontSize: 18 }}>{post.authorAvatar}</span>
+                                    <Avatar url={post.avatarUrl} fallback={post.authorAvatar} size={32}
+                                      onClick={onViewUserProfile && post.authorId ? () => onViewUserProfile?.(post.author) : undefined} />
                                     <span
                                       style={{ fontSize: 13, color: "#6b7280", fontWeight: 500, cursor: onViewUserProfile ? "pointer" : "default" }}
                                       onClick={(e) => {
@@ -2334,6 +2477,96 @@ export function ForumApp({ onClose, isAdmin = false, loginUsername = "", onViewU
         );
     };
 
+    // ============ 渲染：通知列表 ==========
+    const renderNotifications = () => (
+        <div style={{ height: "100%", display: "flex", flexDirection: "column", background: "#f5f5f5" }}>
+            <div style={{
+                background: "linear-gradient(135deg, #f97316 0%, #fb923c 100%)",
+                padding: "16px 20px", color: "#fff",
+                display: "flex", alignItems: "center", gap: 12
+            }}>
+                <button
+                    onClick={() => setView("sections")}
+                    style={{
+                        background: "rgba(255,255,255,0.2)", border: "none", color: "#fff",
+                        width: 32, height: 32, borderRadius: 8, fontSize: 18, cursor: "pointer",
+                        display: "flex", alignItems: "center", justifyContent: "center"
+                    }}>←</button>
+                <div style={{ flex: 1, fontSize: 16, fontWeight: 600 }}>消息通知</div>
+                <button
+                    onClick={async () => {
+                        await forumApi("mark_all_notifications_read");
+                        setNotifications(prev => prev.map(n => ({ ...n, is_read: true })));
+                        refreshUnread();
+                    }}
+                    style={{
+                        background: "rgba(255,255,255,0.25)", border: "1px solid rgba(255,255,255,0.4)",
+                        borderRadius: 8, padding: "4px 10px", color: "#fff", fontSize: 13, cursor: "pointer"
+                    }}>全部已读</button>
+            </div>
+
+            <div style={{ flex: 1, overflowY: "auto", padding: 12 }}>
+                {notifLoading ? (
+                    <div style={{ textAlign: "center", padding: 30, color: "#9ca3af", fontSize: 13 }}>加载中...</div>
+                ) : notifications.length === 0 ? (
+                    <div style={{ textAlign: "center", padding: 40, color: "#9ca3af" }}>
+                        <div style={{ fontSize: 36, marginBottom: 8 }}>🔔</div>
+                        <div style={{ fontSize: 13 }}>还没有任何通知</div>
+                    </div>
+                ) : (
+                    notifications.map((n) => {
+                        const typeMap: Record<string, { icon: string; text: string }> = {
+                            reply: { icon: "💬", text: "回复了你的帖子" },
+                            sub_reply: { icon: "💬", text: "回复了你的评论" },
+                            like: { icon: "❤️", text: "赞了你的帖子" },
+                            favorite: { icon: "⭐", text: "收藏了你的帖子" },
+                        };
+                        const meta = typeMap[n.type] || { icon: "🔔", text: "有新的互动" };
+                        return (
+                            <div
+                                key={n.id}
+                                onClick={async () => {
+                                    if (!n.is_read) {
+                                        await forumApi("mark_notification_read", { notificationId: n.id });
+                                        setNotifications(prev => prev.map(x => x.id === n.id ? { ...x, is_read: true } : x));
+                                        refreshUnread();
+                                    }
+                                    if (!n.post_deleted) openPostDetailFromId(n.post_id, "notifications");
+                                }}
+                                style={{
+                                    display: "flex", gap: 10, padding: 12, marginBottom: 8,
+                                    background: n.is_read ? "#fff" : "#fff7ed",
+                                    borderRadius: 12, cursor: n.post_deleted ? "default" : "pointer",
+                                    border: "1px solid #f0f0f0", opacity: n.post_deleted ? 0.6 : 1
+                                }}>
+                                <Avatar url={n.actor_avatar} fallback="🌽" size={40} />
+                                <div style={{ flex: 1, minWidth: 0 }}>
+                                    <div style={{ fontSize: 13, marginBottom: 3 }}>
+                                        <span style={{ fontWeight: 600, color: "#1f2937" }}>{n.actor_name}</span>
+                                        <span style={{ color: "#6b7280" }}> {meta.icon} {meta.text}</span>
+                                    </div>
+                                    <div style={{
+                                        fontSize: 13, color: "#374151", marginBottom: 3,
+                                        overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap"
+                                    }}>《{n.post_title}》</div>
+                                    {n.content && (
+                                        <div style={{ fontSize: 12, color: "#6b7280", lineHeight: 1.5 }}>{n.content}</div>
+                                    )}
+                                    <div style={{ fontSize: 11, color: "#9ca3af", marginTop: 3 }}>
+                                        {new Date(n.created_at).toLocaleString("zh-CN")}
+                                    </div>
+                                </div>
+                                {!n.is_read && (
+                                    <span style={{ width: 8, height: 8, borderRadius: "50%", background: "#f97316", marginTop: 6, flexShrink: 0 }} />
+                                )}
+                            </div>
+                        );
+                    })
+                )}
+            </div>
+        </div>
+    );
+
     // ============ 主渲染 ============
     const content = (() => {
         switch (view) {
@@ -2347,6 +2580,8 @@ export function ForumApp({ onClose, isAdmin = false, loginUsername = "", onViewU
                 return renderNewPost();
             case "search":
                 return renderSearch();
+            case "notifications":
+                return renderNotifications();
             default:
                 return renderSections();
         }

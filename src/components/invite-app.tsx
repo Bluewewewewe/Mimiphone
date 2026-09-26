@@ -42,7 +42,7 @@ export function InviteApp({ onClose, loginUsername = "", isAdmin = false }: Invi
       const res = await fetch("/api/auth", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "list_my_invite_codes", token }),
+        body: JSON.stringify({ action: "list_my_invite_codes", authToken: token }),
       });
       const result = await res.json();
       if (result.success) {
@@ -67,7 +67,7 @@ export function InviteApp({ onClose, loginUsername = "", isAdmin = false }: Invi
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           action: "generate_invite_codes",
-          token,
+          authToken: token,
           count: Math.min(Math.max(count, 1), 20),
           roleType: isSuperAdmin ? roleType : "user",
         }),
@@ -92,7 +92,7 @@ export function InviteApp({ onClose, loginUsername = "", isAdmin = false }: Invi
       const res = await fetch("/api/auth", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "revoke_invite_code", token, code }),
+        body: JSON.stringify({ action: "revoke_invite_code", authToken: token, code }),
       });
       const result = await res.json();
       if (result.success) {

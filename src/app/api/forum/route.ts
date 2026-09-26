@@ -53,6 +53,47 @@ async function buildAuthorNameMap(supabase: Awaited<ReturnType<typeof getSupabas
   return map;
 }
 
+// 批量取用户公开信息（头像/中文名），用于帖子卡片与头像渲染
+async function buildUserInfoMap(
+  supabase: Awaited<ReturnType<typeof getSupabaseClient>>,
+  ids: any[]
+): Promise<Map<string, { name: string; avatar: string }>> {
+  const map = new Map<string, { name: string; avatar: string }>();
+  const uniq = Array.from(new Set((ids || []).filter((x): x is string => typeof x === "string")));
+  if (uniq.length === 0) return map;
+  const { data } = await supabase
+    .from("users")
+    .select("id, display_name, avatar_url")
+    .in("id", uniq);
+  (data || []).forEach((u: any) => {
+    if (u && u.id) map.set(u.id, { name: u.display_name || "", avatar: u.avatar_url || "" });
+  });
+  return map;
+}
+
+// 生成一条论坛通知；自己对自己的操作不通知
+async function createNotification(
+  supabase: Awaited<ReturnType<typeof getSupabaseClient>>,
+  n: { userId: string; actorId: string; type: string; postId: string; replyId?: string | null; content?: string | null }
+) {
+  if (!n.userId || !n.actorId || n.userId === n.actorId) return;
+  try {
+    await supabase.from("forum_notifications").insert({
+      user_id: n.userId,
+      actor_id: n.actorId,
+      type: n.type,
+      post_id: n.postId,
+      reply_id: n.replyId || null,
+      content: n.content ? String(n.content).slice(0, 100) : null,
+      is_read: false,
+      created_at: new Date().toISOString(),
+    });
+  } catch (e) {
+    // 通知失败不影响主流程（如表尚未创建）
+    console.error("createNotification failed:", e);
+  }
+}
+
 function requireForumAuth(body: any): Promise<VerifiedUser> {
   return requireAuth(bodyToken(body));
 }
@@ -102,7 +143,7 @@ export async function POST(request: NextRequest) {
     const { action } = body;
 
     // 写操作限流：发帖/回复/点赞/收藏/管理操作每分钟10次
-    if (action && !["list", "detail"].includes(action as string)) {
+    if (action && !["list", "detail", "unread_count"].includes(action as string)) {
       const limit = rateLimit(request, `forum:${action as string}`, 10, 60);
       if (!limit.allowed) {
         return NextResponse.json(
@@ -131,14 +172,18 @@ export async function POST(request: NextRequest) {
       }
       const { data, error } = await query;
       if (error) throw error;
-      const nameMap = await buildAuthorNameMap(supabase, (data || []).map((x) => x.author_id));
-      const posts = (data || []).map((p) => ({
-        ...p,
-        author_name: p.author_id ? (nameMap.get(p.author_id) || p.author_name) : p.author_name,
-        replyCount: p.forum_replies?.[0]?.count ?? 0,
-        likes: p.forum_likes?.[0]?.count ?? 0,
-        favorites: p.forum_favorites?.[0]?.count ?? 0,
-      }));
+      const infoMap = await buildUserInfoMap(supabase, (data || []).map((x) => x.author_id));
+      const posts = (data || []).map((p) => {
+        const info = p.author_id ? infoMap.get(p.author_id) : null;
+        return {
+          ...p,
+          author_name: info?.name || p.author_name,
+          author_avatar: info?.avatar || "",
+          replyCount: p.forum_replies?.[0]?.count ?? 0,
+          likes: p.forum_likes?.[0]?.count ?? 0,
+          favorites: p.forum_favorites?.[0]?.count ?? 0,
+        };
+      });
       return NextResponse.json({ success: true, data: posts });
     }
 
@@ -162,14 +207,20 @@ export async function POST(request: NextRequest) {
       }
       // 统一回复详情字段名，避免前端读错；附带计数
       const rawReplies: any[] = Array.isArray(post.forum_replies) ? post.forum_replies : [];
-      const nm = await buildAuthorNameMap(supabase, [post.author_id, ...rawReplies.map((r) => r.author_id)]);
-      const replies = rawReplies.map((r) => ({
-        ...r,
-        author_name: r.author_id ? (nm.get(r.author_id) || r.author_name) : r.author_name,
-      }));
+      const im = await buildUserInfoMap(supabase, [post.author_id, ...rawReplies.map((r) => r.author_id)]);
+      const replies = rawReplies.map((r) => {
+        const ri = r.author_id ? im.get(r.author_id) : null;
+        return {
+          ...r,
+          author_name: ri?.name || r.author_name,
+          author_avatar: ri?.avatar || "",
+        };
+      });
+      const postInfo = post.author_id ? im.get(post.author_id) : null;
       const data = {
         ...post,
-        author_name: post.author_id ? (nm.get(post.author_id) || post.author_name) : post.author_name,
+        author_name: postInfo?.name || post.author_name,
+        author_avatar: postInfo?.avatar || "",
         forum_replies: replies,
         forum_replies_detail: replies,
         replyCount: replies.length,
@@ -250,7 +301,7 @@ export async function POST(request: NextRequest) {
       // 确认帖子存在且未删除
       const { data: post, error: postErr } = await supabase
         .from("forum_posts")
-        .select("id, replies")
+        .select("id, replies, author_id")
         .is("deleted_at", null)
         .eq("id", postId)
         .maybeSingle();
@@ -290,6 +341,34 @@ export async function POST(request: NextRequest) {
         .single();
       if (error) throw error;
 
+      // 通知楼主（新回复）
+      await createNotification(supabase, {
+        userId: (post as any).author_id,
+        actorId: user.userId,
+        type: parentId ? "reply" : "reply",
+        postId,
+        replyId: (data as any).id,
+        content: cleanContent,
+      });
+      // 楼中楼：额外通知被回复的那层作者
+      if (parentId) {
+        const { data: pr } = await supabase
+          .from("forum_replies")
+          .select("author_id")
+          .eq("id", parentId)
+          .maybeSingle();
+        if (pr?.author_id) {
+          await createNotification(supabase, {
+            userId: pr.author_id,
+            actorId: user.userId,
+            type: "sub_reply",
+            postId,
+            replyId: (data as any).id,
+            content: cleanContent,
+          });
+        }
+      }
+
       // 按真实回复行数回写冗余计数（含楼中楼），失败不影响回复本身
       const { count: realCount } = await supabase
         .from("forum_replies")
@@ -325,6 +404,19 @@ export async function POST(request: NextRequest) {
         user_id: user.userId,
         created_at: new Date().toISOString(),
       });
+      const { data: lp } = await supabase
+        .from("forum_posts")
+        .select("author_id")
+        .eq("id", postId)
+        .maybeSingle();
+      if (lp?.author_id) {
+        await createNotification(supabase, {
+          userId: lp.author_id,
+          actorId: user.userId,
+          type: "like",
+          postId,
+        });
+      }
       return NextResponse.json({ success: true, data: { liked: true } });
     }
 
@@ -348,6 +440,19 @@ export async function POST(request: NextRequest) {
         user_id: user.userId,
         created_at: new Date().toISOString(),
       });
+      const { data: fp2 } = await supabase
+        .from("forum_posts")
+        .select("author_id")
+        .eq("id", postId)
+        .maybeSingle();
+      if (fp2?.author_id) {
+        await createNotification(supabase, {
+          userId: fp2.author_id,
+          actorId: user.userId,
+          type: "favorite",
+          postId,
+        });
+      }
       return NextResponse.json({ success: true, data: { favorited: true } });
     }
 
@@ -408,6 +513,184 @@ export async function POST(request: NextRequest) {
       if (error) throw error;
       await logAudit(adminUser.id, adminUser.username, action, "forum_post", postId, { bug_status: bugStatus });
       return NextResponse.json({ success: true, data });
+    }
+
+    // ========== 查看用户公开主页资料 ==========
+    if (action === "user_profile") {
+      const { username } = body;
+      if (typeof username !== "string" || !username.trim()) {
+        return badRequest("缺少用户名");
+      }
+      const { data: u, error } = await supabase
+        .from("users")
+        .select("id, username, display_name, avatar_url, user_bio, created_at")
+        .eq("username", username.trim())
+        .not("status", "eq", "deactivated")
+        .maybeSingle();
+      if (error) throw error;
+      if (!u) {
+        return NextResponse.json({ success: false, error: "用户不存在" }, { status: 404 });
+      }
+      return NextResponse.json({
+        success: true,
+        data: {
+          id: u.id,
+          username: u.username,
+          displayName: u.display_name || u.username,
+          avatarUrl: u.avatar_url || "",
+          bio: u.user_bio || "",
+          joinedAt: u.created_at || "",
+        },
+      });
+    }
+
+    // 组装帖子卡片（含实时头像、计数），供主页各 tab 使用
+    async function decoratePostCards(rows: any[]) {
+      const im = await buildUserInfoMap(supabase, rows.map((x) => x.author_id));
+      return rows.map((p) => {
+        const info = p.author_id ? im.get(p.author_id) : null;
+        return {
+          ...p,
+          author_name: info?.name || p.author_name,
+          author_avatar: info?.avatar || "",
+          replyCount: p.replies ?? 0,
+          likes: p.likes_count ?? 0,
+          favorites: p.favorites_count ?? 0,
+        };
+      });
+    }
+
+    // ========== 某用户发布的帖子 ==========
+    if (action === "user_posts") {
+      const { userId } = body;
+      if (typeof userId !== "string" || !UUID_RE.test(userId)) return badRequest("用户ID无效");
+      const { data, error } = await supabase
+        .from("forum_posts")
+        .select("*, forum_likes(count), forum_favorites(count)")
+        .eq("author_id", userId)
+        .is("deleted_at", null)
+        .order("created_at", { ascending: false });
+      if (error) throw error;
+      const rows = (data || []).map((p) => ({
+        ...p,
+        likes_count: p.forum_likes?.[0]?.count ?? 0,
+        favorites_count: p.forum_favorites?.[0]?.count ?? 0,
+      }));
+      return NextResponse.json({ success: true, data: await decoratePostCards(rows) });
+    }
+
+    // ========== 某用户点赞的帖子 ==========
+    if (action === "user_likes") {
+      const viewer = await requireForumAuth(body);
+      const { userId } = body;
+      if (typeof userId !== "string" || !UUID_RE.test(userId)) return badRequest("用户ID无效");
+      if (userId !== viewer.userId) return badRequest("只能查看自己的点赞");
+      const { data, error } = await supabase
+        .from("forum_likes")
+        .select("created_at, forum_posts(*, forum_likes(count), forum_favorites(count))")
+        .eq("user_id", userId)
+        .order("created_at", { ascending: false });
+      if (error) throw error;
+      const rows = (data || [])
+        .map((x: any) => x.forum_posts)
+        .filter((p: any) => p && !p.deleted_at)
+        .map((p: any) => ({
+          ...p,
+          likes_count: p.forum_likes?.[0]?.count ?? 0,
+          favorites_count: p.forum_favorites?.[0]?.count ?? 0,
+        }));
+      return NextResponse.json({ success: true, data: await decoratePostCards(rows) });
+    }
+
+    // ========== 某用户收藏的帖子 ==========
+    if (action === "user_favorites") {
+      const viewer = await requireForumAuth(body);
+      const { userId } = body;
+      if (typeof userId !== "string" || !UUID_RE.test(userId)) return badRequest("用户ID无效");
+      if (userId !== viewer.userId) return badRequest("只能查看自己的收藏");
+      const { data, error } = await supabase
+        .from("forum_favorites")
+        .select("created_at, forum_posts(*, forum_likes(count), forum_favorites(count))")
+        .eq("user_id", userId)
+        .order("created_at", { ascending: false });
+      if (error) throw error;
+      const rows = (data || [])
+        .map((x: any) => x.forum_posts)
+        .filter((p: any) => p && !p.deleted_at)
+        .map((p: any) => ({
+          ...p,
+          likes_count: p.forum_likes?.[0]?.count ?? 0,
+          favorites_count: p.forum_favorites?.[0]?.count ?? 0,
+        }));
+      return NextResponse.json({ success: true, data: await decoratePostCards(rows) });
+    }
+
+    // ========== 通知：未读数 ==========
+    if (action === "unread_count") {
+      const user = await requireForumAuth(body);
+      const { count } = await supabase
+        .from("forum_notifications")
+        .select("id", { count: "exact", head: true })
+        .eq("user_id", user.userId)
+        .eq("is_read", false);
+      return NextResponse.json({ success: true, data: { count: count || 0 } });
+    }
+
+    // ========== 通知：列表 ==========
+    if (action === "notifications") {
+      const user = await requireForumAuth(body);
+      const { data, error } = await supabase
+        .from("forum_notifications")
+        .select("*")
+        .eq("user_id", user.userId)
+        .order("created_at", { ascending: false })
+        .limit(50);
+      if (error) throw error;
+      // 手动带上操作者名字/头像与帖子标题，避免 PostgREST 嵌层对 FK 的依赖
+      const actorIds = Array.from(new Set((data || []).map((x) => x.actor_id).filter(Boolean)));
+      const postIds = Array.from(new Set((data || []).map((x) => x.post_id).filter(Boolean)));
+      const im = await buildUserInfoMap(supabase, actorIds);
+      const { data: postsData } = await supabase
+        .from("forum_posts")
+        .select("id, title, deleted_at")
+        .in("id", postIds);
+      const postMap = new Map<string, any>((postsData || []).map((x) => [x.id, x]));
+      const list = (data || []).map((n) => {
+        const ai = n.actor_id ? im.get(n.actor_id) : null;
+        const pt = postMap.get(n.post_id);
+        return {
+          ...n,
+          actor_name: ai?.name || "用户",
+          actor_avatar: ai?.avatar || "",
+          post_title: pt?.title || "（帖子已删除）",
+          post_deleted: !!pt?.deleted_at,
+        };
+      });
+      return NextResponse.json({ success: true, data: list });
+    }
+
+    // ========== 通知：标记已读 ==========
+    if (action === "mark_notification_read") {
+      const user = await requireForumAuth(body);
+      const { notificationId } = body;
+      if (typeof notificationId !== "string") return badRequest("缺少通知ID");
+      await supabase
+        .from("forum_notifications")
+        .update({ is_read: true })
+        .eq("id", notificationId)
+        .eq("user_id", user.userId);
+      return NextResponse.json({ success: true });
+    }
+
+    // ========== 通知：全部已读 ==========
+    if (action === "mark_all_notifications_read") {
+      const user = await requireForumAuth(body);
+      await supabase
+        .from("forum_notifications")
+        .update({ is_read: true })
+        .eq("user_id", user.userId)
+        .eq("is_read", false);
+      return NextResponse.json({ success: true });
     }
 
     return NextResponse.json(
