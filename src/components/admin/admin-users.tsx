@@ -24,6 +24,7 @@ interface UserItem {
   review_result?: string | null;
   invite_count: number;
   violation_count: number;
+  role?: string;
   created_at: string;
 }
 
@@ -136,6 +137,20 @@ export default function AdminUsers({ token }: AdminUsersProps) {
     }
   };
 
+  const handleSetRole = async (targetUserId: string, role: string) => {
+    const res = await fetch("/api/auth", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "set_role", authToken: token, targetUserId, role }),
+    });
+    const json = await res.json();
+    showMessage(json.success ? json.message || "角色已更新" : json.error || "操作失败");
+    if (json.success) {
+      setDetailUser(null);
+      load();
+    }
+  };
+
   const renderBanModal = () => {
     if (!banModal) return null;
     const isLift = banModal.status === "none";
@@ -221,6 +236,7 @@ export default function AdminUsers({ token }: AdminUsersProps) {
             <div><span className="text-cyan-200/70">微博昵称：</span>{detailUser.weibo_name || "-"}</div>
             <div><span className="text-cyan-200/70">超话等级：</span>{detailUser.weibo_level || "-"}</div>
             <div><span className="text-cyan-200/70">验证状态：</span>{statusEmoji[detailUser.status] || "-"} {detailUser.status}</div>
+            <div><span className="text-cyan-200/70">当前角色：</span>{detailUser.role || "user"}</div>
             <div><span className="text-cyan-200/70">封禁状态：</span>{banStatusMap[detailUser.ban_status || "none"]}</div>
             {detailUser.ban_until && (
               <div><span className="text-cyan-200/70">解封时间：</span>{new Date(detailUser.ban_until).toLocaleString()}</div>
@@ -236,6 +252,24 @@ export default function AdminUsers({ token }: AdminUsersProps) {
             <div><span className="text-cyan-200/70">邀请人数：</span>{detailUser.invite_count}</div>
             <div><span className="text-cyan-200/70">违规次数：</span>{detailUser.violation_count}</div>
             <div><span className="text-cyan-200/70">注册时间：</span>{new Date(detailUser.created_at).toLocaleString()}</div>
+          </div>
+          <div className="mt-4">
+            <div className="mb-2 text-sm font-semibold text-cyan-200">🎭 角色任命</div>
+            <div className="grid grid-cols-3 gap-2">
+              {[
+                { label: "👤 用户", role: "user" },
+                { label: "🔧 管理员", role: "admin" },
+                { label: "👑 超管", role: "super_admin" },
+              ].map((btn) => (
+                <button
+                  key={btn.role}
+                  onClick={() => handleSetRole(detailUser.id, btn.role)}
+                  className="min-h-[40px] rounded-lg border border-purple-500/30 bg-purple-600/20 text-xs text-purple-200 transition hover:bg-purple-600/40"
+                >
+                  {btn.label}
+                </button>
+              ))}
+            </div>
           </div>
           <div className="mt-5 grid grid-cols-2 gap-2 md:grid-cols-3">
             {[
