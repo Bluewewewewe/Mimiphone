@@ -680,7 +680,7 @@ function AdminManagePanel({ currentUsername }: { currentUsername: string }) {
     const fetchData = async () => {
         try {
             setLoading(true);
-            const [pendingRes, allRes, usersRes] = await Promise.all([
+            const [pendingRes, allRes, usersRes, roleRes] = await Promise.all([
                 fetch("/api/auth", {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
@@ -695,11 +695,18 @@ function AdminManagePanel({ currentUsername }: { currentUsername: string }) {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
                     body: JSON.stringify({ action: "list_users" })
+                }),
+                fetch("/api/auth", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ action: "validate", token: localStorage.getItem("auth_token") })
                 })
             ]);
             const pendingResult = await pendingRes.json();
             const allResult = await allRes.json();
             const usersResult = await usersRes.json();
+            const roleResult = await roleRes.json();
+            if (roleResult.valid) setMyRole(roleResult.data?.role || "user");
             if (pendingResult.success) setPendingAdmins(pendingResult.data);
             if (allResult.success) setAllAdmins(allResult.data);
             if (usersResult.success) setAllUsers(usersResult.data);
@@ -750,19 +757,25 @@ function AdminManagePanel({ currentUsername }: { currentUsername: string }) {
         }
     };
 
+    const [myRole, setMyRole] = useState<string>("");
+
     const handleSetRole = async (targetUserId: string, role: string) => {
         setActionLoading(targetUserId);
         try {
-            await fetch("/api/auth", {
+            const res = await fetch("/api/auth", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
                     action: "set_role",
-                    username: currentUsername,
+                    authToken: localStorage.getItem("auth_token"),
                     targetUserId,
                     role
                 })
             });
+            const result = await res.json();
+            if (!result.success && result.error) {
+                alert(result.error);
+            }
             fetchData();
         } catch (e) {
             console.error("Set role failed:", e);
@@ -1067,19 +1080,20 @@ function AdminManagePanel({ currentUsername }: { currentUsername: string }) {
                                                     marginBottom: 6
                                                 }}>🎭 角色管理</div>
                                                 <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-                                                    {(["user", "teacher", "leader", "admin"] as const).map(role => {
+                                                    {(["user", "teacher", "leader", "admin", ...(myRole === "super_admin" ? ["super_admin"] : [])] as string[]).map(role => {
                                                         const roleInfo: Record<string, { label: string; color: string }> = {
                                                             user: { label: "用户", color: "#6b7280" },
                                                             teacher: { label: "老师", color: "#2e7d32" },
                                                             leader: { label: "团长", color: "#f59e0b" },
-                                                            admin: { label: "管理员", color: "#dc2626" }
+                                                            admin: { label: "管理员", color: "#dc2626" },
+                                                            super_admin: { label: "超管", color: "#7c3aed" }
                                                         };
                                                         const info = roleInfo[role];
                                                         const isCurrentRole = user.role === role;
                                                         return (
                                                             <button
                                                                 key={role}
-                                                                onClick={() => handleSetRole(user.username, role)}
+                                                                onClick={() => handleSetRole(user.id, role)}
                                                                 style={{
                                                                     fontSize: 11,
                                                                     padding: "4px 10px",
@@ -1141,11 +1155,12 @@ function InviteAdminPanel({ currentUsername }: { currentUsername: string }) {
     const [expiresDays, setExpiresDays] = useState(0);
     const [inviteRequired, setInviteRequired] = useState(false);
     const [copiedCode, setCopiedCode] = useState("");
+    const [myRole, setMyRole] = useState<string>("");
 
     const fetchData = async () => {
         try {
             setLoading(true);
-            const [codesRes, treeRes, settingsRes] = await Promise.all([
+            const [codesRes, treeRes, settingsRes, roleRes] = await Promise.all([
                 fetch("/api/invite", {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
@@ -1160,14 +1175,21 @@ function InviteAdminPanel({ currentUsername }: { currentUsername: string }) {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
                     body: JSON.stringify({ action: "get_invite_settings" })
+                }),
+                fetch("/api/auth", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ action: "validate", token: localStorage.getItem("auth_token") })
                 })
             ]);
             const codesResult = await codesRes.json();
             const treeResult = await treeRes.json();
             const settingsResult = await settingsRes.json();
+            const roleResult = await roleRes.json();
             if (codesResult.success) setInviteCodes(codesResult.data);
             if (treeResult.success) setInviteTree(treeResult.data);
             if (settingsResult.success) setInviteRequired(settingsResult.data?.invite_required === "true");
+            if (roleResult.valid) setMyRole(roleResult.data?.role || "user");
         } catch (e) {
             console.error("Fetch invite data failed:", e);
         } finally {
@@ -1175,19 +1197,24 @@ function InviteAdminPanel({ currentUsername }: { currentUsername: string }) {
         }
     };
 
-    const handleGenerate = async () => {
+    const handleGenerate = async (roleType?: string) => {
         setGenerating(true);
         try {
-            await fetch("/api/invite", {
+            const res = await fetch("/api/invite", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
                     action: "generate",
                     username: currentUsername,
+                    roleType,
                     maxUses,
                     expiresInDays: expiresDays || undefined,
                 })
             });
+            const result = await res.json();
+            if (!result.success && result.error) {
+                alert(result.error);
+            }
             fetchData();
         } catch (e) {
             console.error("Generate failed:", e);
@@ -1348,7 +1375,7 @@ function InviteAdminPanel({ currentUsername }: { currentUsername: string }) {
                         }}
                     />
                     <button
-                        onClick={handleGenerate}
+                        onClick={() => handleGenerate()}
                         disabled={generating}
                         style={{
                             padding: "5px 14px",
@@ -1363,6 +1390,27 @@ function InviteAdminPanel({ currentUsername }: { currentUsername: string }) {
                         }}>
                         {generating ? "生成中..." : "生成"}
                     </button>
+                    {myRole === "super_admin" && (
+                        <button
+                            onClick={() => handleGenerate("admin")}
+                            disabled={generating}
+                            style={{
+                                padding: "5px 14px",
+                                borderRadius: 8,
+                                border: "none",
+                                fontSize: 12,
+                                fontWeight: 700,
+                                background: "#dc2626",
+                                color: "#fff",
+                                cursor: generating ? "not-allowed" : "pointer",
+                                opacity: generating ? 0.5 : 1
+                            }}>
+                            👑 生成管理员码
+                        </button>
+                    )}
+                </div>
+                <div style={{ fontSize: 10, color: "#999", marginTop: 6 }}>
+                    普通码 MIMI- 开头注册为普通用户；管理员码 ADMIN- 开头注册即管理员（仍需审核通过）
                 </div>
             </div>
 

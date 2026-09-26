@@ -37,6 +37,7 @@ interface UserProfileAppProps {
   isSelf?: boolean;
   embedded?: boolean;
   onClose?: () => void;
+  onBack?: () => void;
   onOpenPost?: (postId: string) => void;
   onOpenUser?: (username: string) => void;
 }
@@ -78,6 +79,7 @@ export default function UserProfileApp({
   isSelf = false,
   embedded = false,
   onClose,
+  onBack,
   onOpenPost,
   onOpenUser,
 }: UserProfileAppProps) {
@@ -305,7 +307,7 @@ export default function UserProfileApp({
 
   return (
     <div style={{ height: "100%", display: "flex", flexDirection: "column", background: "#f5f5f5" }}>
-      {!embedded && (
+      {!embedded ? (
         <div
           style={{
             background: "linear-gradient(135deg, #f97316 0%, #fb923c 100%)",
@@ -339,9 +341,43 @@ export default function UserProfileApp({
             {isSelf ? "我的主页" : "用户主页"}
           </div>
         </div>
-      )}
+      ) : onBack ? (
+        <div
+          style={{
+            background: "linear-gradient(135deg, #f97316 0%, #fb923c 100%)",
+            padding: "10px 16px",
+            color: "#fff",
+            display: "flex",
+            alignItems: "center",
+            gap: 12,
+            flexShrink: 0,
+          }}
+        >
+          <button
+            onClick={onBack}
+            style={{
+              background: "rgba(255,255,255,0.2)",
+              border: "none",
+              color: "#fff",
+              width: 32,
+              height: 32,
+              borderRadius: 8,
+              fontSize: 18,
+              cursor: "pointer",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+            }}
+          >
+            ←
+          </button>
+          <div style={{ flex: 1, fontSize: 15, fontWeight: 600 }}>
+            {isSelf ? "我的主页" : "用户主页"}
+          </div>
+        </div>
+      ) : null}
 
-      <div style={{ flex: 1, overflowY: "auto" }}>
+      <div style={{ flex: 1, overflowY: "auto", paddingBottom: embedded ? 68 : 12 }}>
         <div
           style={{
             margin: 12,

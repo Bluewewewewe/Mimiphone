@@ -8,6 +8,7 @@ interface ForumPost {
     title: string;
     content: string;
     author: string;
+    authorUsername: string;
     authorAvatar: string;
     avatarUrl?: string;
     authorId?: string;
@@ -107,6 +108,7 @@ interface ApiPost {
     section: string;
     author_id: string;
     author_name: string;
+    author_username?: string;
     category?: string;
     tags?: string[];
     is_pinned: boolean;
@@ -259,6 +261,7 @@ function mapApiPostToPost(p: ApiPost): ForumPost {
         title: p.title,
         content: p.content,
         author: p.author_name,
+        authorUsername: p.author_username || "",
         authorAvatar: p.author_name === "官方通知" || p.section === "announce" ? "📢" : "🌽",
         avatarUrl: (p as any).author_avatar || "",
         authorId: p.author_id,
@@ -327,6 +330,8 @@ export function ForumApp({ onClose, isAdmin = false, loginUsername = "", onViewU
     const [followingPosts, setFollowingPosts] = useState<ForumPost[]>([]);
     const [followingLoaded, setFollowingLoaded] = useState(false);
     const [followingLoading, setFollowingLoading] = useState(false);
+    const [followingError, setFollowingError] = useState<string | null>(null);
+    const [guestPrompt, setGuestPrompt] = useState<"" | "messages" | "me">("");
     const [profileChain, setProfileChain] = useState<string[]>([]);
 
     const [currentSection, setCurrentSection] = useState<string | null>(null);
@@ -657,6 +662,7 @@ export function ForumApp({ onClose, isAdmin = false, loginUsername = "", onViewU
     const loadFollowing = async () => {
         if (!getAuthToken()) {
             setFollowingPosts([]);
+            setFollowingError(null);
             setFollowingLoaded(true);
             return;
         }
@@ -665,6 +671,14 @@ export function ForumApp({ onClose, isAdmin = false, loginUsername = "", onViewU
             const res = await forumApi("list", { feed: "following" });
             if (res.success && Array.isArray(res.data)) {
                 setFollowingPosts((res.data as ApiPost[]).map(mapApiPostToPost));
+                setFollowingError(null);
+            } else if ((res as any).code === "AUTH_REQUIRED") {
+                // 登录已过期：不再误导成「还没有关注的人」
+                setFollowingPosts([]);
+                setFollowingError("登录已过期，请重新登录");
+            } else {
+                setFollowingPosts([]);
+                setFollowingError("加载失败，请稍后再试");
             }
             setFollowingLoaded(true);
         } finally {
@@ -673,6 +687,11 @@ export function ForumApp({ onClose, isAdmin = false, loginUsername = "", onViewU
     };
 
     const goMainTab = (tab: "home" | "messages" | "me") => {
+        // 游客：消息/我需要登录，弹出引导而不是显示误导性空态
+        if (tab !== "home" && !getAuthToken()) {
+            setGuestPrompt(tab);
+            return;
+        }
         setMainTab(tab);
         if (tab === "home") {
             setView("sections");
@@ -685,8 +704,53 @@ export function ForumApp({ onClose, isAdmin = false, loginUsername = "", onViewU
         }
     };
 
+    const renderGuestPrompt = () => (
+        <div style={{ height: "100%", display: "flex", flexDirection: "column", background: "#f5f5f5" }}>
+            <div style={{
+                background: "linear-gradient(135deg, #f97316 0%, #fb923c 100%)",
+                padding: "16px 20px", color: "#fff",
+                display: "flex", alignItems: "center", gap: 12
+            }}>
+                <button
+                    onClick={() => { setGuestPrompt(""); setView("sections"); }}
+                    style={{
+                        background: "rgba(255,255,255,0.2)", border: "none", color: "#fff",
+                        width: 32, height: 32, borderRadius: 8, fontSize: 18, cursor: "pointer",
+                        display: "flex", alignItems: "center", justifyContent: "center"
+                    }}>←</button>
+                <div style={{ flex: 1, fontSize: 16, fontWeight: 600 }}>
+                    {guestPrompt === "messages" ? "消息" : "我的"}
+                </div>
+            </div>
+            <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: 40 }}>
+                <div style={{ fontSize: 48, marginBottom: 12 }}>🔐</div>
+                <div style={{ fontSize: 15, fontWeight: 600, color: "#374151", marginBottom: 6 }}>登录后才能查看哦</div>
+                <div style={{ fontSize: 13, color: "#9ca3af", marginBottom: 20 }}>
+                    {guestPrompt === "messages" ? "登录后接收点赞、评论和关注通知" : "登录后管理你的主页与帖子"}
+                </div>
+                {onClose ? (
+                    <button
+                        onClick={onClose}
+                        style={{
+                            background: "#f97316", color: "#fff", border: "none", borderRadius: 20,
+                            padding: "8px 28px", fontSize: 14, fontWeight: 600, cursor: "pointer"
+                        }}>去登录</button>
+                ) : (
+                    <div style={{ fontSize: 12, color: "#9ca3af" }}>请先退出论坛，在手机桌面登录账号</div>
+                )}
+            </div>
+        </div>
+    );
+
     const viewUserByName = (username: string) => {
-        setProfileChain(prev => [...prev, username]);
+        if (!username) return;
+        // 从消息通知进入时同步底栏高亮到「我」
+        setMainTab("me");
+        setProfileChain(prev => {
+            // 栈顶相同则不重复压栈
+            if (prev[prev.length - 1] === username) return prev;
+            return [...prev, username];
+        });
         setView("me");
     };
 
@@ -1209,7 +1273,7 @@ export function ForumApp({ onClose, isAdmin = false, loginUsername = "", onViewU
             )}
 
             {/* 板块列表 */}
-            <div style={{ flex: 1, overflow: "auto", padding: "12px 16px" }}>
+            <div style={{ flex: 1, overflow: "auto", padding: "12px 16px 68px 16px" }}>
                 {isAdmin && (
                     <div style={{ marginBottom: 12 }}>
                         <button
@@ -1388,9 +1452,20 @@ export function ForumApp({ onClose, isAdmin = false, loginUsername = "", onViewU
                         <div style={{ fontSize: 12, opacity: 0.9 }}>关注用户发布的最新帖子</div>
                     </div>
                 </div>
-                <div style={{ flex: 1, overflow: "auto", padding: "12px 16px" }}>
+                <div style={{ flex: 1, overflow: "auto", padding: "12px 16px 68px 16px" }}>
                     {followingLoading ? (
                         <div style={{ textAlign: "center", padding: 40, color: "#999", fontSize: 14 }}>加载中...</div>
+                    ) : followingError ? (
+                        <div style={{ textAlign: "center", padding: 40, color: "#999" }}>
+                            <div style={{ fontSize: 44, marginBottom: 12 }}>⏳</div>
+                            <div style={{ fontSize: 14, marginBottom: 10 }}>{followingError}</div>
+                            {onClose && (
+                                <button onClick={onClose} style={{
+                                    background: "#f97316", color: "#fff", border: "none", borderRadius: 18,
+                                    padding: "6px 22px", fontSize: 13, fontWeight: 600, cursor: "pointer"
+                                }}>重新登录</button>
+                            )}
+                        </div>
                     ) : list.length === 0 ? (
                         <div style={{ textAlign: "center", padding: 40, color: "#999" }}>
                             <div style={{ fontSize: 48, marginBottom: 12 }}>🌱</div>
@@ -1409,7 +1484,7 @@ export function ForumApp({ onClose, isAdmin = false, loginUsername = "", onViewU
                                 </div>
                                 <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
                                     <Avatar url={post.avatarUrl} fallback={post.authorAvatar} size={32}
-                                        onClick={post.authorId ? () => viewUserByName(post.author) : undefined} />
+                                        onClick={post.authorUsername ? () => viewUserByName(post.authorUsername) : undefined} />
                                     <span style={{ fontSize: 13, color: "#6b7280", fontWeight: 500 }}>{post.author}</span>
                                     <span style={{ fontSize: 12, color: "#d1d5db" }}>·</span>
                                     <span style={{ fontSize: 12, color: "#9ca3af" }}>{post.createdAt}</span>
@@ -2690,7 +2765,7 @@ export function ForumApp({ onClose, isAdmin = false, loginUsername = "", onViewU
                 ))}
             </div>
 
-            <div style={{ flex: 1, overflowY: "auto", padding: 12 }}>
+            <div style={{ flex: 1, overflowY: "auto", padding: "12px 12px 68px 12px" }}>
                 {notifLoading ? (
                     <div style={{ textAlign: "center", padding: 30, color: "#9ca3af", fontSize: 13 }}>加载中...</div>
                 ) : filteredNotifs.length === 0 ? (
@@ -2761,12 +2836,14 @@ export function ForumApp({ onClose, isAdmin = false, loginUsername = "", onViewU
     const renderMe = () => {
         const current = profileChain[profileChain.length - 1] || loginUsername;
         const isSelf = !current || current === loginUsername;
+        const canGoBack = profileChain.length > 1 || (!isSelf && profileChain.length === 1);
         return (
             <UserProfileApp
                 key={current + ":" + profileChain.length}
                 username={current}
                 isSelf={isSelf}
                 embedded
+                onBack={canGoBack ? closeProfile : undefined}
                 onOpenPost={async (postId) => {
                     setDetailReturnView("notifications");
                     const fresh = await fetchForumPostDetail(postId);
@@ -2824,6 +2901,7 @@ export function ForumApp({ onClose, isAdmin = false, loginUsername = "", onViewU
 
     // ============ 主渲染 ============
     const content = (() => {
+        if (guestPrompt) return renderGuestPrompt();
         switch (view) {
             case "sections":
                 return renderSections();

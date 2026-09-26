@@ -33,6 +33,9 @@ function badRequest(message: string) {
   return NextResponse.json({ success: false, error: message }, { status: 400 });
 }
 
+// 鉴权失败：语义上返回 401 而非统一 500
+class AuthRequiredError extends Error {}
+
 function bodyToken(body: any): string | undefined {
   const t = body?.authToken ?? body?.token;
   return typeof t === "string" ? t : undefined;
@@ -57,16 +60,16 @@ async function buildAuthorNameMap(supabase: Awaited<ReturnType<typeof getSupabas
 async function buildUserInfoMap(
   supabase: Awaited<ReturnType<typeof getSupabaseClient>>,
   ids: any[]
-): Promise<Map<string, { name: string; avatar: string }>> {
-  const map = new Map<string, { name: string; avatar: string }>();
+): Promise<Map<string, { name: string; avatar: string; username: string }>> {
+  const map = new Map<string, { name: string; avatar: string; username: string }>();
   const uniq = Array.from(new Set((ids || []).filter((x): x is string => typeof x === "string")));
   if (uniq.length === 0) return map;
   const { data } = await supabase
     .from("users")
-    .select("id, display_name, avatar_url")
+    .select("id, username, display_name, avatar_url")
     .in("id", uniq);
   (data || []).forEach((u: any) => {
-    if (u && u.id) map.set(u.id, { name: u.display_name || "", avatar: u.avatar_url || "" });
+    if (u && u.id) map.set(u.id, { name: u.display_name || "", avatar: u.avatar_url || "", username: u.username || "" });
   });
   return map;
 }
@@ -94,8 +97,12 @@ async function createNotification(
   }
 }
 
-function requireForumAuth(body: any): Promise<VerifiedUser> {
-  return requireAuth(bodyToken(body));
+async function requireForumAuth(body: any): Promise<VerifiedUser> {
+  try {
+    return await requireAuth(bodyToken(body));
+  } catch (e) {
+    throw new AuthRequiredError(e instanceof Error ? e.message : "未登录或登录已过期");
+  }
 }
 
 async function requireForumPermission(body: any, permission: AdminPermission): Promise<VerifiedUser> {
@@ -143,8 +150,15 @@ export async function POST(request: NextRequest) {
     const { action } = body;
 
     // 写操作限流：发帖/回复/点赞/收藏/管理操作每分钟10次
-    if (action && !["list", "detail", "unread_count", "follow_counts", "follow_list"].includes(action as string)) {
-      const limit = rateLimit(request, `forum:${action as string}`, 10, 60);
+    const READ_LIMIT_ACTIONS = new Set(["follow_counts", "follow_list"]);
+    if (action && !["list", "detail", "unread_count"].includes(action as string)) {
+      // 关注读操作允许较宽松的 60 次/分钟，写操作维持 10 次/分钟
+      const limit = rateLimit(
+        request,
+        `forum:${action as string}`,
+        READ_LIMIT_ACTIONS.has(action as string) ? 60 : 10,
+        60
+      );
       if (!limit.allowed) {
         return NextResponse.json(
           { success: false, error: "请求过于频繁，请稍后再试" },
@@ -168,7 +182,17 @@ export async function POST(request: NextRequest) {
           .from("forum_follows")
           .select("following_id")
           .eq("follower_id", me.userId);
-        const ids = (follows || []).map((x: any) => x.following_id).filter(Boolean);
+        let ids = (follows || []).map((x: any) => x.following_id).filter(Boolean);
+        if (ids.length === 0) {
+          return NextResponse.json({ success: true, data: [] });
+        }
+        // 排除已注销用户：注销作者的旧帖不再进入关注流
+        const { data: activeUsers } = await supabase
+          .from("users")
+          .select("id")
+          .in("id", ids)
+          .not("status", "eq", "deactivated");
+        ids = (activeUsers || []).map((u: any) => u.id);
         if (ids.length === 0) {
           return NextResponse.json({ success: true, data: [] });
         }
@@ -191,6 +215,7 @@ export async function POST(request: NextRequest) {
         return {
           ...p,
           author_name: info?.name || p.author_name,
+          author_username: info?.username || "",
           author_avatar: info?.avatar || "",
           replyCount: p.forum_replies?.[0]?.count ?? 0,
           likes: p.forum_likes?.[0]?.count ?? 0,
@@ -226,6 +251,7 @@ export async function POST(request: NextRequest) {
         return {
           ...r,
           author_name: ri?.name || r.author_name,
+          author_username: ri?.username || "",
           author_avatar: ri?.avatar || "",
         };
       });
@@ -233,6 +259,7 @@ export async function POST(request: NextRequest) {
       const data = {
         ...post,
         author_name: postInfo?.name || post.author_name,
+        author_username: postInfo?.username || "",
         author_avatar: postInfo?.avatar || "",
         forum_replies: replies,
         forum_replies_detail: replies,
@@ -663,16 +690,16 @@ export async function POST(request: NextRequest) {
       const actorIds = Array.from(new Set((data || []).map((x) => x.actor_id).filter(Boolean)));
       const postIds = Array.from(new Set((data || []).map((x) => x.post_id).filter(Boolean)));
       const im = await buildUserInfoMap(supabase, actorIds);
-      const { data: actorUsers } = await supabase
-        .from("users")
-        .select("id, username")
-        .in("id", actorIds);
-      const actorNameMap = new Map<string, string>((actorUsers || []).map((u) => [u.id, u.username]));
-      const { data: postsData } = await supabase
-        .from("forum_posts")
-        .select("id, title, deleted_at")
-        .in("id", postIds);
-      const postMap = new Map<string, any>((postsData || []).map((x) => [x.id, x]));
+      // 空集合守卫：无 actor/post 需要 enrich 时不发查询
+      let postMap = new Map<string, any>();
+      if (postIds.length > 0) {
+        const { data: postsData, error: pe } = await supabase
+          .from("forum_posts")
+          .select("id, title, deleted_at")
+          .in("id", postIds);
+        if (pe) throw pe;
+        postMap = new Map<string, any>((postsData || []).map((x) => [x.id, x]));
+      }
       const list = (data || []).map((n) => {
         const ai = n.actor_id ? im.get(n.actor_id) : null;
         const pt = postMap.get(n.post_id);
@@ -680,7 +707,7 @@ export async function POST(request: NextRequest) {
           ...n,
           actor_name: ai?.name || "用户",
           actor_avatar: ai?.avatar || "",
-          actor_username: n.actor_id ? actorNameMap.get(n.actor_id) || "" : "",
+          actor_username: n.actor_id ? ai?.username || "" : "",
           post_title: pt?.title || "（帖子已删除）",
           post_deleted: !!pt?.deleted_at,
         };
@@ -715,33 +742,51 @@ export async function POST(request: NextRequest) {
     // ========== 关注 / 取消关注 ==========
     if (action === "follow") {
       const me = await requireForumAuth(body);
+      // CAND-001：封禁/禁言/受限用户禁止关注操作
+      const banCheck = checkBanForForum(me);
+      if (banCheck) return banCheck;
       const { userId } = body;
       if (typeof userId !== "string" || !UUID_RE.test(userId)) return badRequest("用户ID无效");
       if (userId === me.userId) return badRequest("不能关注自己");
+
+      // existing 先查：已关注时即使对方已注销也允许取关（清理陈旧关系）
+      const { data: existing, error: ee } = await supabase
+        .from("forum_follows")
+        .select("id")
+        .eq("follower_id", me.userId)
+        .eq("following_id", userId)
+        .maybeSingle();
+      if (ee) throw ee;
+      if (existing) {
+        const { error: de } = await supabase.from("forum_follows").delete().eq("id", existing.id);
+        if (de) throw de;
+        return NextResponse.json({ success: true, data: { following: false } });
+      }
+
+      // 新关注才需要确认目标存在且未注销
       const { data: target, error: te } = await supabase
         .from("users")
         .select("id, status")
         .eq("id", userId)
         .maybeSingle();
       if (te) throw te;
-      if (!target) return NextResponse.json({ success: false, error: "用户不存在" }, { status: 404 });
-      if (target.status === "deactivated") return NextResponse.json({ success: false, error: "用户不存在" }, { status: 404 });
-
-      const { data: existing } = await supabase
-        .from("forum_follows")
-        .select("id")
-        .eq("follower_id", me.userId)
-        .eq("following_id", userId)
-        .maybeSingle();
-      if (existing) {
-        await supabase.from("forum_follows").delete().eq("id", existing.id);
-        return NextResponse.json({ success: true, data: { following: false } });
+      if (!target || target.status === "deactivated") {
+        return NextResponse.json({ success: false, error: "用户不存在" }, { status: 404 });
       }
-      await supabase.from("forum_follows").insert({
+
+      const { error: ie } = await supabase.from("forum_follows").insert({
         follower_id: me.userId,
         following_id: userId,
         created_at: new Date().toISOString(),
       });
+      if (ie) {
+        // 并发竞态：唯一约束冲突（23505）视为已关注，幂等返回且不重复通知
+        if (ie.code === "23505") {
+          return NextResponse.json({ success: true, data: { following: true } });
+        }
+        throw ie;
+      }
+      // insert 确认成功后才发通知
       await createNotification(supabase, {
         userId,
         actorId: me.userId,
@@ -755,16 +800,23 @@ export async function POST(request: NextRequest) {
     if (action === "follow_counts") {
       const { userId } = body;
       if (typeof userId !== "string" || !UUID_RE.test(userId)) return badRequest("用户ID无效");
-      const [{ count: following }, { count: followers }] = await Promise.all([
+      // 计数口径与 follow_list 一致：不统计已注销用户
+      const [
+        { count: following, error: e1 },
+        { count: followers, error: e2 },
+      ] = await Promise.all([
         supabase
           .from("forum_follows")
-          .select("id", { count: "exact", head: true })
-          .eq("follower_id", userId),
+          .select("id, target:users!forum_follows_following_id_fkey(id)", { count: "exact", head: true })
+          .eq("follower_id", userId)
+          .not("target.status", "eq", "deactivated"),
         supabase
           .from("forum_follows")
-          .select("id", { count: "exact", head: true })
-          .eq("following_id", userId),
+          .select("id, target:users!forum_follows_follower_id_fkey(id)", { count: "exact", head: true })
+          .eq("following_id", userId)
+          .not("target.status", "eq", "deactivated"),
       ]);
+      if (e1 || e2) throw e1 || e2;
       // 附带当前查看者是否已关注（未登录/本人时为 false）
       let isFollowing = false;
       try {
@@ -789,16 +841,20 @@ export async function POST(request: NextRequest) {
 
     // ========== 关注列表 / 粉丝列表 ==========
     if (action === "follow_list") {
-      const { userId, type: listType } = body;
+      // CAND-007：要求登录，防止匿名批量爬取全站社交图谱
+      await requireForumAuth(body);
+      const { userId, type: listType, offset } = body;
       if (typeof userId !== "string" || !UUID_RE.test(userId)) return badRequest("用户ID无效");
       if (listType !== "following" && listType !== "followers") return badRequest("列表类型无效");
+      const rangeStart = typeof offset === "number" && Number.isFinite(offset) && offset >= 0 ? Math.floor(offset) : 0;
       const col = listType === "following" ? "follower_id" : "following_id";
       const otherTable = listType === "following" ? "following" : "follower";
       const { data, error } = await supabase
         .from("forum_follows")
         .select(`created_at, ${otherTable}:users!forum_follows_${listType === "following" ? "following" : "follower"}_id_fkey(id, username, display_name, avatar_url, user_bio, status)`)
         .eq(col, userId)
-        .order("created_at", { ascending: false });
+        .order("created_at", { ascending: false })
+        .range(rangeStart, rangeStart + 99);
       if (error) throw error;
       const rows = (data || [])
         .map((x: any) => x[otherTable])
@@ -820,6 +876,12 @@ export async function POST(request: NextRequest) {
   } catch (error) {
     const message =
       error instanceof Error ? error.message : "服务器内部错误";
+    if (error instanceof AuthRequiredError) {
+      return NextResponse.json(
+        { success: false, error: message, code: "AUTH_REQUIRED" },
+        { status: 401 }
+      );
+    }
     return NextResponse.json(
       { success: false, error: message },
       { status: 500 }
