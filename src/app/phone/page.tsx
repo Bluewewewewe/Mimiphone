@@ -2101,39 +2101,46 @@ export default function PhonePage() {
         return () => window.removeEventListener("message", handler);
     }, []);
 
-    // iOS 键盘收起后页面不回弹：聚焦时记录各滚动容器位置，失焦后强制还原
+    // iOS 键盘适配（核心方案）：页面高度实时跟随可视区域
+    // 键盘弹起 -> 可视区变矮 -> 页面自动变矮，浏览器从一开始就不需要把页面往上拽
     useEffect(() => {
-        const collect = () => {
-            const positions: { el: Element; top: number; left: number }[] = [];
-            document.querySelectorAll("*").forEach((el) => {
-                const style = getComputedStyle(el);
-                if (/(auto|scroll)/.test(style.overflowY) && (el.scrollTop > 0 || el.scrollLeft > 0)) {
-                    positions.push({ el, top: el.scrollTop, left: el.scrollLeft });
-                }
-            });
-            return positions;
+        const vv = window.visualViewport;
+        if (!vv) return;
+
+        const sync = () => {
+            // 高度 = 可视区域高度；顶部偏移 = 可视区域相对布局视口的偏移
+            document.documentElement.style.setProperty("--app-height", `${vv.height}px`);
+            document.documentElement.style.setProperty("--vv-offset-top", `${vv.offsetTop}px`);
+            // 如果浏览器仍然把页面拽偏了，立即纠正
+            if (vv.offsetTop > 0 || window.scrollY > 0) {
+                window.scrollTo(0, 0);
+            }
         };
-        let saved: { el: Element; top: number; left: number }[] = [];
-        const onFocus = () => { saved = collect(); };
+
+        sync();
+        vv.addEventListener("resize", sync);
+        vv.addEventListener("scroll", sync);
+        window.addEventListener("scroll", sync);
+        return () => {
+            vv.removeEventListener("resize", sync);
+            vv.removeEventListener("scroll", sync);
+            window.removeEventListener("scroll", sync);
+        };
+    }, []);
+
+    // 双保险：输入框失焦后强制把滚动位置全部复位
+    useEffect(() => {
         const restore = () => {
-            // 多帧强制复位：iOS 收起键盘的时机不稳，一次性还原可能被浏览器覆盖
-            [50, 150, 300].forEach((delay) => {
+            [50, 150, 300, 500].forEach((delay) => {
                 setTimeout(() => {
                     window.scrollTo(0, 0);
                     document.body.scrollTop = 0;
                     document.documentElement.scrollTop = 0;
-                    saved.forEach(({ el, top, left }) => {
-                        if (document.contains(el)) { el.scrollTop = top; el.scrollLeft = left; }
-                    });
                 }, delay);
             });
         };
-        document.addEventListener("focusin", onFocus, true);
         document.addEventListener("focusout", restore, true);
-        return () => {
-            document.removeEventListener("focusin", onFocus, true);
-            document.removeEventListener("focusout", restore, true);
-        };
+        return () => document.removeEventListener("focusout", restore, true);
     }, []);
 
 
