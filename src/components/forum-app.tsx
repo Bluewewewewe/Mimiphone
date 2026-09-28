@@ -1484,7 +1484,7 @@ export function ForumApp({ onClose, isAdmin = false, loginUsername = "", onViewU
                                 </div>
                                 <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
                                     <Avatar url={post.avatarUrl} fallback={post.authorAvatar} size={32}
-                                        onClick={post.authorUsername ? () => viewUserByName(post.authorUsername) : undefined} />
+                                        onClick={post.authorUsername && onViewUserProfile ? () => onViewUserProfile!(post.authorUsername) : undefined} />
                                     <span style={{ fontSize: 13, color: "#6b7280", fontWeight: 500 }}>{post.author}</span>
                                     <span style={{ fontSize: 12, color: "#d1d5db" }}>·</span>
                                     <span style={{ fontSize: 12, color: "#9ca3af" }}>{post.createdAt}</span>
@@ -2786,7 +2786,7 @@ export function ForumApp({ onClose, isAdmin = false, loginUsername = "", onViewU
                                 refreshUnread();
                             }
                             if (isFollow) {
-                                if (n.actor_username) viewUserByName(n.actor_username);
+                                if (n.actor_username && onViewUserProfile) onViewUserProfile(n.actor_username);
                             } else if (!n.post_deleted) {
                                 openPostDetailFromId(n.post_id, mainTab === "messages" ? "notifications" : "notifications");
                             }
@@ -2852,7 +2852,7 @@ export function ForumApp({ onClose, isAdmin = false, loginUsername = "", onViewU
                         setView("postDetail");
                     }
                 }}
-                onOpenUser={(u) => viewUserByName(u)}
+                onOpenUser={(u) => onViewUserProfile?.(u)}
             />
         );
     };

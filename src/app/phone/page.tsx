@@ -2101,46 +2101,6 @@ export default function PhonePage() {
         return () => window.removeEventListener("message", handler);
     }, []);
 
-    // iOS 键盘适配（核心方案）：页面高度实时跟随可视区域
-    // 键盘弹起 -> 可视区变矮 -> 页面自动变矮，浏览器从一开始就不需要把页面往上拽
-    useEffect(() => {
-        const vv = window.visualViewport;
-        if (!vv) return;
-
-        const sync = () => {
-            // 键盘弹起时 iOS 会把可视区定位到布局视口中下部（offsetTop>0）以露出输入框。
-            // 页面高度取 可视区高度+顶部偏移，让页面底边始终对齐可视区底边，
-            // 底部输入栏正好贴在键盘上方，且可视区下方不再出现空白。
-            const h = vv.height + vv.offsetTop;
-            document.documentElement.style.setProperty("--app-height", `${h}px`);
-            document.documentElement.style.setProperty("--vv-offset-top", `${vv.offsetTop}px`);
-        };
-
-        sync();
-        vv.addEventListener("resize", sync);
-        vv.addEventListener("scroll", sync);
-        window.addEventListener("scroll", sync);
-        return () => {
-            vv.removeEventListener("resize", sync);
-            vv.removeEventListener("scroll", sync);
-            window.removeEventListener("scroll", sync);
-        };
-    }, []);
-
-    // 双保险：输入框失焦后强制把滚动位置全部复位
-    useEffect(() => {
-        const restore = () => {
-            [50, 150, 300, 500].forEach((delay) => {
-                setTimeout(() => {
-                    window.scrollTo(0, 0);
-                    document.body.scrollTop = 0;
-                    document.documentElement.scrollTop = 0;
-                }, delay);
-            });
-        };
-        document.addEventListener("focusout", restore, true);
-        return () => document.removeEventListener("focusout", restore, true);
-    }, []);
 
 
     const WALLPAPER_PRESETS: Record<string, string> = {
