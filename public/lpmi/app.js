@@ -521,5 +521,6 @@ document.getElementById('btn-retry').addEventListener('click', () => {
 });
 
 document.getElementById('btn-close').addEventListener('click', () => {
-  if (window.history.length > 1) window.history.back();
+  // 通过 postMessage 通知父页面关闭 LPMI
+  window.parent.postMessage({ type: 'lpmi-close' }, '*');
 });

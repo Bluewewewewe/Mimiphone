@@ -160,7 +160,6 @@ export default function AdminDashboard({ token, username, onClose }: AdminDashbo
       setInviteCodes((prev) => prev.map((c) => (c.code === code ? { ...c, status: "revoked" } : c)));
     }
   };
-  };
 
   const [forumActionLoading, setForumActionLoading] = useState<string | null>(null);
 
@@ -560,11 +559,11 @@ export default function AdminDashboard({ token, username, onClose }: AdminDashbo
           top: 0;
           left: 0;
           right: 0;
-          height: 56px;
+          height: 80px;
           display: flex;
-          align-items: center;
+          align-items: flex-end;
           justify-content: space-between;
-          padding: 0 16px;
+          padding: 0 16px 12px 16px;
           background: #1a103c;
           border-bottom: 1px solid rgba(139, 92, 246, 0.2);
           z-index: 100002;
@@ -579,7 +578,7 @@ export default function AdminDashboard({ token, username, onClose }: AdminDashbo
         }
         .admin-mobile-sidebar {
           position: fixed;
-          top: 56px;
+          top: 80px;
           left: 0;
           bottom: 0;
           width: 260px;
@@ -599,7 +598,7 @@ export default function AdminDashboard({ token, username, onClose }: AdminDashbo
         @media (max-width: 767px) {
           .admin-dashboard {
             flex-direction: column;
-            padding-top: 56px;
+            padding-top: 80px;
           }
           .admin-main {
             padding: 16px;

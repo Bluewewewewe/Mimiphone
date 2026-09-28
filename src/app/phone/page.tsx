@@ -2090,6 +2090,31 @@ export default function PhonePage() {
             .catch(() => {});
     }, []);
 
+    // 监听 iframe 发来的关闭消息（LPMI 测试的×按钮）
+    useEffect(() => {
+        const handler = (e: MessageEvent) => {
+            if (e.data?.type === "lpmi-close") {
+                setCurrentApp(null);
+            }
+        };
+        window.addEventListener("message", handler);
+        return () => window.removeEventListener("message", handler);
+    }, []);
+
+    // 输入框失焦后把被键盘顶上去的页面复位（iOS WebView 不会自动回弹）
+    useEffect(() => {
+        const reset = () => {
+            setTimeout(() => {
+                if (window.scrollY > 0) window.scrollTo(0, 0);
+                document.body.scrollTop = 0;
+                document.documentElement.scrollTop = 0;
+            }, 100);
+        };
+        document.addEventListener("blur", reset, true);
+        return () => document.removeEventListener("blur", reset, true);
+    }, []);
+
+
     const WALLPAPER_PRESETS: Record<string, string> = {
         default: "linear-gradient(175deg, #f0f7f2 0%, #e8f3eb 30%, #dceee2 60%, #d4e8da 100%)",
         fresh: "linear-gradient(135deg, #e8f5e9 0%, #c8e6c9 50%, #a5d6a7 100%)",
@@ -2139,6 +2164,7 @@ export default function PhonePage() {
     // 新注册系统状态
     const [showAdminApp, setShowAdminApp] = useState(false);
     const [showNewAdmin, setShowNewAdmin] = useState(false);
+
     const [adminRole, setAdminRole] = useState<'super_admin' | 'review_admin' | 'ops_admin'>('super_admin');
 
     // Weibo verification state
@@ -2494,6 +2520,35 @@ export default function PhonePage() {
     }, [loginUsername]);
 
     const [meSubPage, setMeSubPage] = useState<"main" | "settings" | "identity" | "unlock" | "about" | "invite" | "account" | "profile" | "wallpaper" | "theme" | "change-password" | "knob-style" | "bio" | "redeem">("main");
+
+    // 右滑返回：从屏幕左边缘开始向右滑，退回上一级
+    useEffect(() => {
+        let startX = 0, startY = 0, active = false;
+        const onStart = (e: TouchEvent) => {
+            const t = e.touches[0];
+            startX = t.clientX; startY = t.clientY;
+            active = startX < 30; // 只认左边缘 30px 内起手
+        };
+        const onEnd = (e: TouchEvent) => {
+            if (!active) return;
+            active = false;
+            const t = e.changedTouches[0];
+            const dx = t.clientX - startX;
+            const dy = t.clientY - startY;
+            if (dx > 70 && Math.abs(dy) < 60) {
+                // 层级：App 内 → 关 App；个人中心子页 → 回主页；管理后台 → 退出
+                if (currentApp) setCurrentApp(null);
+                else if (meSubPage !== "main") setMeSubPage("main");
+                else if (showNewAdmin) setShowNewAdmin(false);
+            }
+        };
+        window.addEventListener("touchstart", onStart, { passive: true });
+        window.addEventListener("touchend", onEnd, { passive: true });
+        return () => {
+            window.removeEventListener("touchstart", onStart);
+            window.removeEventListener("touchend", onEnd);
+        };
+    }, [currentApp, meSubPage, showNewAdmin]);
     const [identityStep, setIdentityStep] = useState(0);
     const [debugMode, setDebugMode] = useState(false);
     const [debugLevel, setDebugLevel] = useState<number | "all" | null>(null);
@@ -9797,7 +9852,7 @@ export default function PhonePage() {
     function renderCall() {
         return (
             <div className="call-page">
-                <button className="app-back-btn" style={{ position: "absolute", top: 12, left: 12, zIndex: 10 }} onClick={() => setCurrentApp(null)}>← 返回</button>
+                <button className="app-back-btn" style={{ position: "fixed", top: 12, left: 12, zIndex: 10 }} onClick={() => setCurrentApp(null)}>← 返回</button>
                 <div className="call-avatar">👨</div>
                 <div className="call-name">爸爸</div>
                 <div className="call-status">来电中...</div>
@@ -9812,7 +9867,7 @@ export default function PhonePage() {
     function renderBrowser() {
         return (
             <div className="browser-page">
-                <button className="app-back-btn" style={{ position: "absolute", top: 12, left: 12, zIndex: 10 }} onClick={() => setCurrentApp(null)}>← 返回</button>
+                <button className="app-back-btn" style={{ position: "fixed", top: 12, left: 12, zIndex: 10 }} onClick={() => setCurrentApp(null)}>← 返回</button>
                 <div className="browser-bar"><input className="browser-url" placeholder="输入网址或搜索" /></div>
                 <div className="browser-body"><div
                         style={{
@@ -9826,7 +9881,7 @@ export default function PhonePage() {
     function renderMusic() {
         return (
             <div className="music-page">
-                <button className="app-back-btn" style={{ position: "absolute", top: 12, left: 12, zIndex: 10 }} onClick={() => setCurrentApp(null)}>← 返回</button>
+                <button className="app-back-btn" style={{ position: "fixed", top: 12, left: 12, zIndex: 10 }} onClick={() => setCurrentApp(null)}>← 返回</button>
                 <div className="music-cover">🎵</div>
                 <div className="music-title">我们的时光</div>
                 <div className="music-artist">爸爸唱的</div>
@@ -9995,21 +10050,6 @@ export default function PhonePage() {
                     flexDirection: "column",
                     background: "#365314"
                 }}>
-                <div
-                    className="app-header"
-                    style={{
-                        background: "#365314",
-                        color: "#fff",
-                        flexShrink: 0
-                    }}>
-                    <button className="app-back-btn" onClick={() => setCurrentApp(null)}>返回</button>
-                    <div
-                        className="app-title"
-                        style={{
-                            color: "#fff"
-                        }}>LPMI · 纯爱磕CP</div>
-                    <div className="app-header-actions" />
-                </div>
                 <div
                     style={{
                         flex: 1,
