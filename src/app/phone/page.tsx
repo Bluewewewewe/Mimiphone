@@ -2186,6 +2186,7 @@ export default function PhonePage() {
     // 新注册系统状态
     const [showAdminApp, setShowAdminApp] = useState(false);
     const [showNewAdmin, setShowNewAdmin] = useState(false);
+    const [externalReady, setExternalReady] = useState<{ mimi: boolean; workshop: boolean }>({ mimi: false, workshop: false });
 
     const [adminRole, setAdminRole] = useState<'super_admin' | 'review_admin' | 'ops_admin'>('super_admin');
 
@@ -9874,7 +9875,7 @@ export default function PhonePage() {
     function renderCall() {
         return (
             <div className="call-page">
-                <button className="app-back-btn" style={{ position: "fixed", top: 12, left: 12, zIndex: 10 }} onClick={() => setCurrentApp(null)}>← 返回</button>
+                <button className="app-back-btn" style={{ position: "fixed", top: 12, left: 12, zIndex: 50 }} onClick={() => setCurrentApp(null)}>← 返回</button>
                 <div className="call-avatar">👨</div>
                 <div className="call-name">爸爸</div>
                 <div className="call-status">来电中...</div>
@@ -9889,7 +9890,7 @@ export default function PhonePage() {
     function renderBrowser() {
         return (
             <div className="browser-page">
-                <button className="app-back-btn" style={{ position: "fixed", top: 12, left: 12, zIndex: 10 }} onClick={() => setCurrentApp(null)}>← 返回</button>
+                <button className="app-back-btn" style={{ position: "fixed", top: 12, left: 12, zIndex: 50 }} onClick={() => setCurrentApp(null)}>← 返回</button>
                 <div className="browser-bar"><input className="browser-url" placeholder="输入网址或搜索" /></div>
                 <div className="browser-body"><div
                         style={{
@@ -9903,7 +9904,7 @@ export default function PhonePage() {
     function renderMusic() {
         return (
             <div className="music-page">
-                <button className="app-back-btn" style={{ position: "fixed", top: 12, left: 12, zIndex: 10 }} onClick={() => setCurrentApp(null)}>← 返回</button>
+                <button className="app-back-btn" style={{ position: "fixed", top: 12, left: 12, zIndex: 50 }} onClick={() => setCurrentApp(null)}>← 返回</button>
                 <div className="music-cover">🎵</div>
                 <div className="music-title">我们的时光</div>
                 <div className="music-artist">爸爸唱的</div>
@@ -10010,7 +10011,7 @@ export default function PhonePage() {
                             position: "absolute",
                             top: 14,
                             left: 14,
-                            zIndex: 30,
+                            zIndex: 60,
                             width: 38,
                             height: 38,
                             borderRadius: "50%",
@@ -10034,6 +10035,7 @@ export default function PhonePage() {
                         className="external-app-cache-iframe"
                         src={urlMimi}
                         title="米米课程表"
+                        onLoad={() => setExternalReady((prev) => ({ ...prev, mimi: true }))}
                         style={{
                             position: "absolute",
                             inset: 0,
@@ -10048,6 +10050,7 @@ export default function PhonePage() {
                         className="external-app-cache-iframe"
                         src={urlWorkshop}
                         title="迷你小作坊"
+                        onLoad={() => setExternalReady((prev) => ({ ...prev, workshop: true }))}
                         style={{
                             position: "absolute",
                             inset: 0,
@@ -10058,6 +10061,17 @@ export default function PhonePage() {
                             pointerEvents: isWorkshop ? "auto" : "none"
                         }}
                     />
+                    {active && (
+                        <div style={{
+                            position: "absolute", inset: 0, display: "flex",
+                            flexDirection: "column", alignItems: "center", justifyContent: "center",
+                            gap: 12, background: "#fbfaf8", zIndex: 40,
+                            visibility: (isMimi && !externalReady.mimi) || (isWorkshop && !externalReady.workshop) ? "visible" : "hidden"
+                        }}>
+                            <div style={{ fontSize: 34 }}>🌿</div>
+                            <div style={{ fontSize: 13, color: "#5a9e6a" }}>加载中...</div>
+                        </div>
+                    )}
                 </div>
             </div>
         );
