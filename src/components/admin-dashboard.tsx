@@ -100,6 +100,8 @@ export default function AdminDashboard({ token, username, onClose }: AdminDashbo
     return res.json();
   }, [token]);
 
+  const [generating, setGenerating] = useState(false);
+
   const loadInvites = useCallback(async () => {
     setLoading(true);
     const res = await api("list_all_invite_codes", {
@@ -127,32 +129,53 @@ export default function AdminDashboard({ token, username, onClose }: AdminDashbo
 
   const showMessage = (msg: string) => {
     setMessage(msg);
-    setTimeout(() => setMessage(""), 3000);
+    setTimeout(() => setMessage(""), 4000);
   };
 
   const handleGenerateInvites = async () => {
+    setGenerating(true);
     const res = await api("generate_invite_codes", {
       role_type: inviteRole,
       count: inviteCount,
     });
-    showMessage(res.success ? `生成 ${res.data?.length || 0} 个邀请码` : res.error || "失败");
-    if (res.success) loadInvites();
+    setGenerating(false);
+    if (res.success && res.data?.length > 0) {
+      const newCodes = res.data.map((c: { code: string }) => c.code);
+      showMessage(`✅ 已生成 ${newCodes.length} 个新邀请码：${newCodes.join("、")}`);
+      // 只把新生成的码加到列表顶部，不重新拉全量
+      setInviteCodes((prev) => {
+        const existing = new Set(prev.map((p) => p.code));
+        const fresh = res.data.filter((c: { code: string }) => !existing.has(c.code));
+        return [...fresh, ...prev];
+      });
+    } else {
+      showMessage(res.error || "生成失败");
+    }
   };
 
   const handleRevokeInvite = async (code: string) => {
     const res = await api("revoke_invite_code", { code });
     showMessage(res.success ? "已作废" : res.error || "失败");
-    if (res.success) loadInvites();
+    if (res.success) {
+      setInviteCodes((prev) => prev.map((c) => (c.code === code ? { ...c, status: "revoked" } : c)));
+    }
+  };
   };
 
+  const [forumActionLoading, setForumActionLoading] = useState<string | null>(null);
+
   const handleForumAction = async (action: string, postId: string, value?: boolean | string) => {
+    setForumActionLoading(`${action}-${postId}`);
     const res = await fetch("/api/forum", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ action, postId, value, authToken: token }),
     }).then((r) => r.json());
+    setForumActionLoading(null);
     showMessage(res.success ? "操作成功" : res.error || "失败");
-    if (res.success) loadForum();
+    if (res.success) {
+      setPosts((prev) => prev.map((p) => (p.id === postId ? { ...p, ...res.data } : p)));
+    }
   };
 
   const tabs: { id: Tab; label: string; icon: string; permission: string }[] = [
@@ -191,7 +214,7 @@ export default function AdminDashboard({ token, username, onClose }: AdminDashbo
           <span>{t.label}</span>
         </button>
       ))}
-      <button className="admin-close" onClick={onClose}>退出后台</button>
+      <button className="admin-close" onClick={onClose}>退出</button>
     </nav>
   );
 
@@ -230,7 +253,9 @@ export default function AdminDashboard({ token, username, onClose }: AdminDashbo
           value={inviteOwnerFilter}
           onChange={(e) => setInviteOwnerFilter(e.target.value)}
         />
-        <button className="admin-btn primary" onClick={handleGenerateInvites}>生成邀请码</button>
+        <button className="admin-btn primary" onClick={handleGenerateInvites} disabled={generating}>
+          {generating ? "生成中..." : "生成邀请码"}
+        </button>
       </div>
       <div className="admin-list">
         {inviteCodes.map((c) => (
@@ -268,13 +293,13 @@ export default function AdminDashboard({ token, username, onClose }: AdminDashbo
               </div>
             </div>
             <div className="admin-card-actions">
-              <button className="admin-btn" onClick={() => handleForumAction("admin_pin", p.id, !p.is_pinned)}>
+              <button className="admin-btn" disabled={forumActionLoading === `admin_pin-${p.id}`} onClick={() => handleForumAction("admin_pin", p.id, !p.is_pinned)}>
                 {p.is_pinned ? "取消置顶" : "置顶"}
               </button>
-              <button className="admin-btn" onClick={() => handleForumAction("admin_essence", p.id, !p.is_essence)}>
+              <button className="admin-btn" disabled={forumActionLoading === `admin_essence-${p.id}`} onClick={() => handleForumAction("admin_essence", p.id, !p.is_essence)}>
                 {p.is_essence ? "取消精华" : "加精"}
               </button>
-              <button className="admin-btn danger" onClick={() => handleForumAction("admin_delete", p.id)}>删除</button>
+              <button className="admin-btn danger" disabled={forumActionLoading === `admin_delete-${p.id}`} onClick={() => handleForumAction("admin_delete", p.id)}>删除</button>
             </div>
           </div>
         ))}
@@ -342,7 +367,7 @@ export default function AdminDashboard({ token, username, onClose }: AdminDashbo
           <div className="admin-mobile-header">
             <button onClick={() => setSidebarOpen(!sidebarOpen)}>☰</button>
             <span>管理后台</span>
-            <button onClick={onClose}>✕</button>
+            <div style={{ width: 28 }} />
           </div>
           {sidebarOpen && <div className="admin-mobile-overlay" onClick={() => setSidebarOpen(false)} />}
           <div className={`admin-mobile-sidebar ${sidebarOpen ? "open" : ""}`}>
