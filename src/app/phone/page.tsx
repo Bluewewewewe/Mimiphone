@@ -2108,13 +2108,12 @@ export default function PhonePage() {
         if (!vv) return;
 
         const sync = () => {
-            // 高度 = 可视区域高度；顶部偏移 = 可视区域相对布局视口的偏移
-            document.documentElement.style.setProperty("--app-height", `${vv.height}px`);
+            // 键盘弹起时 iOS 会把可视区定位到布局视口中下部（offsetTop>0）以露出输入框。
+            // 页面高度取 可视区高度+顶部偏移，让页面底边始终对齐可视区底边，
+            // 底部输入栏正好贴在键盘上方，且可视区下方不再出现空白。
+            const h = vv.height + vv.offsetTop;
+            document.documentElement.style.setProperty("--app-height", `${h}px`);
             document.documentElement.style.setProperty("--vv-offset-top", `${vv.offsetTop}px`);
-            // 如果浏览器仍然把页面拽偏了，立即纠正
-            if (vv.offsetTop > 0 || window.scrollY > 0) {
-                window.scrollTo(0, 0);
-            }
         };
 
         sync();
