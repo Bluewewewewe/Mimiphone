@@ -2101,17 +2101,39 @@ export default function PhonePage() {
         return () => window.removeEventListener("message", handler);
     }, []);
 
-    // 输入框失焦后把被键盘顶上去的页面复位（iOS WebView 不会自动回弹）
+    // iOS 键盘收起后页面不回弹：聚焦时记录各滚动容器位置，失焦后强制还原
     useEffect(() => {
-        const reset = () => {
-            setTimeout(() => {
-                if (window.scrollY > 0) window.scrollTo(0, 0);
-                document.body.scrollTop = 0;
-                document.documentElement.scrollTop = 0;
-            }, 100);
+        const collect = () => {
+            const positions: { el: Element; top: number; left: number }[] = [];
+            document.querySelectorAll("*").forEach((el) => {
+                const style = getComputedStyle(el);
+                if (/(auto|scroll)/.test(style.overflowY) && (el.scrollTop > 0 || el.scrollLeft > 0)) {
+                    positions.push({ el, top: el.scrollTop, left: el.scrollLeft });
+                }
+            });
+            return positions;
         };
-        document.addEventListener("blur", reset, true);
-        return () => document.removeEventListener("blur", reset, true);
+        let saved: { el: Element; top: number; left: number }[] = [];
+        const onFocus = () => { saved = collect(); };
+        const restore = () => {
+            // 多帧强制复位：iOS 收起键盘的时机不稳，一次性还原可能被浏览器覆盖
+            [50, 150, 300].forEach((delay) => {
+                setTimeout(() => {
+                    window.scrollTo(0, 0);
+                    document.body.scrollTop = 0;
+                    document.documentElement.scrollTop = 0;
+                    saved.forEach(({ el, top, left }) => {
+                        if (document.contains(el)) { el.scrollTop = top; el.scrollLeft = left; }
+                    });
+                }, delay);
+            });
+        };
+        document.addEventListener("focusin", onFocus, true);
+        document.addEventListener("focusout", restore, true);
+        return () => {
+            document.removeEventListener("focusin", onFocus, true);
+            document.removeEventListener("focusout", restore, true);
+        };
     }, []);
 
 

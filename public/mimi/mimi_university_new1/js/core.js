@@ -26,6 +26,15 @@ if (hideWorkshop) {
     if (pageW) pageW.style.display = 'none';
 }
 
+// 嵌入小手机外壳时：顶部留出空间，避免内部标题与外壳圆形返回键重叠
+(function () {
+    const header = document.getElementById('mainHeader');
+    if (header) {
+        header.style.paddingLeft = '62px';
+        header.style.minHeight = '52px';
+    }
+})();
+
 // 检查是否是单独的小作坊模式
 const workshopOnly = urlParams.get('workshopOnly') === 'true';
 if (workshopOnly) {
