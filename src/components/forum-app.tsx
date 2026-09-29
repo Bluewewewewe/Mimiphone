@@ -1484,7 +1484,7 @@ export function ForumApp({ onClose, isAdmin = false, loginUsername = "", onViewU
                                 </div>
                                 <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
                                     <Avatar url={post.avatarUrl} fallback={post.authorAvatar} size={32}
-                                        onClick={post.authorUsername && onViewUserProfile ? () => onViewUserProfile!(post.authorUsername) : undefined} />
+                                        onClick={post.authorUsername ? () => viewUserByName(post.authorUsername) : undefined} />
                                     <span style={{ fontSize: 13, color: "#6b7280", fontWeight: 500 }}>{post.author}</span>
                                     <span style={{ fontSize: 12, color: "#d1d5db" }}>·</span>
                                     <span style={{ fontSize: 12, color: "#9ca3af" }}>{post.createdAt}</span>
@@ -1628,12 +1628,12 @@ export function ForumApp({ onClose, isAdmin = false, loginUsername = "", onViewU
                                 {/* 作者信息 */}
                                 <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
                                     <Avatar url={post.avatarUrl} fallback={post.authorAvatar} size={32}
-                                      onClick={onViewUserProfile && post.authorId ? () => onViewUserProfile?.(post.author) : undefined} />
+                                      onClick={post.authorId ? () => viewUserByName(post.author) : undefined} />
                                     <span
-                                      style={{ fontSize: 13, color: "#6b7280", fontWeight: 500, cursor: onViewUserProfile ? "pointer" : "default" }}
+                                      style={{ fontSize: 13, color: "#6b7280", fontWeight: 500, cursor: "pointer" }}
                                       onClick={(e) => {
                                         e.stopPropagation();
-                                        onViewUserProfile?.(post.author);
+                                        viewUserByName(post.author);
                                       }}
                                     >{post.author}</span>
                                     <span style={{ fontSize: 12, color: "#d1d5db" }}>·</span>
@@ -1816,9 +1816,9 @@ export function ForumApp({ onClose, isAdmin = false, loginUsername = "", onViewU
                         </div>
                         <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 14 }}>
                             <Avatar url={currentPost.avatarUrl} fallback={currentPost.authorAvatar} size={36}
-                              onClick={onViewUserProfile && currentPost.authorId ? () => onViewUserProfile?.(currentPost.author) : undefined} />
+                              onClick={currentPost.authorId ? () => viewUserByName(currentPost.author) : undefined} />
                             <span style={{ fontSize: 14, color: "#6b7280", fontWeight: 500, cursor: "pointer" }}
-                              onClick={() => onViewUserProfile?.(currentPost.author)}>{currentPost.author}</span>
+                              onClick={() => viewUserByName(currentPost.author)}>{currentPost.author}</span>
                             <span style={{ fontSize: 12, color: "#d1d5db" }}>·</span>
                             <span style={{ fontSize: 12, color: "#9ca3af" }}>{currentPost.createdAt}</span>
                         </div>
@@ -1871,7 +1871,7 @@ export function ForumApp({ onClose, isAdmin = false, loginUsername = "", onViewU
                             borderTop: "1px solid #f3f4f6"
                         }}>
                             <button
-                                onClick={() => onViewUserProfile?.(currentPost.author)}
+                                onClick={() => viewUserByName(currentPost.author)}
                                 style={{
                                     background: "#f5f5f5",
                                     border: "none",
@@ -1946,11 +1946,11 @@ export function ForumApp({ onClose, isAdmin = false, loginUsername = "", onViewU
                                     )}
                                     <div style={{ display: "flex", gap: 10, marginBottom: 8 }}>
                                         <Avatar url={reply.avatarUrl} fallback={reply.authorAvatar || "🌽"} size={34}
-                                          onClick={onViewUserProfile && reply.authorId ? () => onViewUserProfile?.(reply.author) : undefined} />
+                                          onClick={reply.authorId ? () => viewUserByName(reply.author) : undefined} />
                                         <div style={{ flex: 1 }}>
                                             <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
                                                 <span style={{ fontSize: 14, color: "#6b7280", fontWeight: 500, cursor: "pointer" }}
-                                                  onClick={() => onViewUserProfile?.(reply.author)}>{reply.author}</span>
+                                                  onClick={() => viewUserByName(reply.author)}>{reply.author}</span>
                                                 <span style={{ fontSize: 12, color: "#d1d5db" }}>·</span>
                                                 <span style={{ fontSize: 12, color: "#9ca3af" }}>{reply.createdAt}</span>
                                             </div>
@@ -2676,12 +2676,12 @@ export function ForumApp({ onClose, isAdmin = false, loginUsername = "", onViewU
                                 </div>
                                 <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
                                     <Avatar url={post.avatarUrl} fallback={post.authorAvatar} size={32}
-                                      onClick={onViewUserProfile && post.authorId ? () => onViewUserProfile?.(post.author) : undefined} />
+                                      onClick={post.authorId ? () => viewUserByName(post.author) : undefined} />
                                     <span
-                                      style={{ fontSize: 13, color: "#6b7280", fontWeight: 500, cursor: onViewUserProfile ? "pointer" : "default" }}
+                                      style={{ fontSize: 13, color: "#6b7280", fontWeight: 500, cursor: "pointer" }}
                                       onClick={(e) => {
                                         e.stopPropagation();
-                                        onViewUserProfile?.(post.author);
+                                        viewUserByName(post.author);
                                       }}
                                     >{post.author}</span>
                                     <span style={{ fontSize: 12, color: "#d1d5db" }}>·</span>
@@ -2786,7 +2786,7 @@ export function ForumApp({ onClose, isAdmin = false, loginUsername = "", onViewU
                                 refreshUnread();
                             }
                             if (isFollow) {
-                                if (n.actor_username && onViewUserProfile) onViewUserProfile(n.actor_username);
+                                if (n.actor_username) viewUserByName(n.actor_username);
                             } else if (!n.post_deleted) {
                                 openPostDetailFromId(n.post_id, mainTab === "messages" ? "notifications" : "notifications");
                             }
@@ -2852,7 +2852,7 @@ export function ForumApp({ onClose, isAdmin = false, loginUsername = "", onViewU
                         setView("postDetail");
                     }
                 }}
-                onOpenUser={(u) => onViewUserProfile?.(u)}
+                onOpenUser={(u) => viewUserByName(u)}
             />
         );
     };
