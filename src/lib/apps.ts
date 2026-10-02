@@ -90,6 +90,26 @@ export function getDefaultApps(): StoreAppItem[] {
             is_external: false
         },
         {
+            id: "app_pickup",
+            app_id: "pickup",
+            name: "米米请就位",
+            icon: "🎭",
+            developer: "米米宇宙",
+            category: "社区",
+            description: "演绎广场——发帖开楼，演绎角色，沉浸式剧情。",
+            features: ["角色演绎", "剧情楼层", "身份锁定", "热度排序"],
+            screenshots: [],
+            version: "1.0.0",
+            status: "published",
+            updated_at: new Date().toISOString(),
+            beta_wipe: false,
+            beta_slots: 0,
+            beta_used_slots: 0,
+            route: "pickup",
+            order: 4,
+            is_external: false
+        },
+        {
             id: "app_game",
             app_id: "game",
             name: "小游戏",
