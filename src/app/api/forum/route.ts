@@ -19,12 +19,13 @@ const BUILTIN_SECTIONS = new Set([
   "event",
   "announce",
   "bug-report",
+  "pickup",
 ]);
 // 仅管理员可发帖的板块
 const ADMIN_ONLY_SECTIONS = new Set(["announce"]);
 
 const TITLE_MAX = 50;
-const CONTENT_MAX = 5000;
+const CONTENT_MAX = 20000;
 const REPLY_MAX = 2000;
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
