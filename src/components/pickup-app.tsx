@@ -77,6 +77,42 @@ interface Identity {
   emoji: string;
 }
 
+interface Notification {
+  id: string;
+  userId: string;
+  type: string;
+  title: string;
+  content: string;
+  relatedPostId: string | null;
+  relatedReplyId: string | null;
+  extra: Record<string, unknown>;
+  readAt: string | null;
+  createdAt: string;
+}
+
+const NOTIF_ICON: Record<string, string> = {
+  reply: '💬', mention: '@', report_result: '⚖️',
+  admin_action: '🛡️', system_announce: '📢', admin_custom: '✉️', version: '🎉',
+};
+
+const NOTIF_API = "/api/notifications";
+
+async function notifGet(params: string, authToken: string): Promise<any> {
+  const r = await fetch(`${NOTIF_API}?${params}`, {
+    headers: { Authorization: `Bearer ${authToken}` },
+  });
+  return r.json();
+}
+
+async function notifPost(body: unknown, authToken: string): Promise<any> {
+  const r = await fetch(NOTIF_API, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${authToken}` },
+    body: JSON.stringify(body),
+  });
+  return r.json();
+}
+
 // ============================================================
 // API 调用
 // ============================================================
@@ -118,7 +154,8 @@ export function PickupApp({ onClose, loginUsername }: { onClose: () => void; log
     | { kind: "home" }
     | { kind: "post"; post: Post }
     | { kind: "replyPage"; post: Post; reply: Reply }
-    | { kind: "create" };
+    | { kind: "create" }
+    | { kind: "notif" };
 
   const [view, setView] = useState<View>({ kind: "home" });
   const [posts, setPosts] = useState<Post[]>([]);
@@ -173,6 +210,22 @@ export function PickupApp({ onClose, loginUsername }: { onClose: () => void; log
   // 我的帖子（推米）
   const [myPosts, setMyPosts] = useState<Post[]>([]);
   const [showMyPosts, setShowMyPosts] = useState(false);
+
+  // 通知中心
+  const [notifications, setNotifications] = useState<Notification[]>([]);
+  const [notifPage, setNotifPage] = useState(1);
+  const [notifTotal, setNotifTotal] = useState(0);
+  const [unreadCount, setUnreadCount] = useState(0);
+  const [notifTab, setNotifTab] = useState<"all" | "unread">("all");
+  const [notifError, setNotifError] = useState("");
+  const [showNotifSend, setShowNotifSend] = useState(false);
+  const [notifSendTarget, setNotifSendTarget] = useState("");
+  const [notifSendTitle, setNotifSendTitle] = useState("");
+  const [notifSendContent, setNotifSendContent] = useState("");
+  const [notifSendType, setNotifSendType] = useState("admin_custom");
+  // TODO: 暂时用空列表判断管理员，后续从后端 user.isAdmin 获取
+  const ADMIN_USERNAMES: string[] = [];
+  const isAdmin = user.isAdmin || ADMIN_USERNAMES.includes(user.username);
 
   // -------- 加载广场 --------
   const loadPosts = useCallback(async (page = 1) => {
@@ -230,6 +283,24 @@ export function PickupApp({ onClose, loginUsername }: { onClose: () => void; log
       if (res.success) setTags(res.tags || []);
     });
   }, [token]);
+
+  // -------- 通知轮询 --------
+  const fetchUnreadCount = useCallback(async () => {
+    try {
+      const res = await notifGet("action=unread_count", token);
+      if (res.success) {
+        setUnreadCount(res.count ?? 0);
+      } else if (res.code === "TABLE_NOT_FOUND") {
+        setNotifError("通知功能暂未开启，请联系管理员初始化数据库");
+      }
+    } catch { /* ignore */ }
+  }, [token]);
+
+  useEffect(() => {
+    fetchUnreadCount();
+    const timer = setInterval(fetchUnreadCount, 30000);
+    return () => clearInterval(timer);
+  }, [fetchUnreadCount]);
 
   // -------- 加载身份 --------
   const loadIdentity = useCallback(async (postId: string) => {
@@ -392,6 +463,72 @@ export function PickupApp({ onClose, loginUsername }: { onClose: () => void; log
     }
   };
 
+  // -------- 通知中心 --------
+  const loadNotifs = useCallback(async (page = 1) => {
+    setNotifError("");
+    const params = new URLSearchParams({ action: "list", page: String(page), pageSize: "20" });
+    if (notifTab === "unread") params.set("type", "unread_only");
+    try {
+      const res = await notifGet(params.toString(), token);
+      if (res.success) {
+        setNotifications(res.data || []);
+        setNotifTotal(res.total || 0);
+        setNotifPage(page);
+      } else if (res.code === "TABLE_NOT_FOUND") {
+        setNotifError("通知功能暂未开启，请联系管理员初始化数据库");
+      }
+    } catch { /* ignore */ }
+  }, [token, notifTab]);
+
+  useEffect(() => {
+    if (view.kind === "notif") loadNotifs(1);
+  }, [view, loadNotifs]);
+
+  const handleMarkAllRead = async () => {
+    await notifPost({ action: "mark_all_read" }, token);
+    setUnreadCount(0);
+    setNotifications((prev) => prev.map((n) => ({ ...n, readAt: n.readAt || new Date().toISOString() })));
+  };
+
+  const handleNotifClick = async (notif: Notification) => {
+    if (!notif.readAt) {
+      await notifPost({ action: "mark_read", ids: [notif.id] }, token);
+      setUnreadCount((c) => Math.max(0, c - 1));
+      setNotifications((prev) => prev.map((n) => n.id === notif.id ? { ...n, readAt: new Date().toISOString() } : n));
+    }
+    if (notif.relatedPostId) {
+      try {
+        const res = await apiGet("get", { postId: notif.relatedPostId }, token);
+        if (res.success && res.post) {
+          setView({ kind: "post", post: res.post });
+          loadReplies(notif.relatedPostId, 1);
+          return;
+        }
+      } catch { /* ignore */ }
+    }
+  };
+
+  const handleAdminSend = async () => {
+    if (!notifSendTitle.trim()) return alert("请填写标题");
+    if (!notifSendContent.trim()) return alert("请填写内容");
+    const body: Record<string, string> = {
+      action: "admin_send",
+      type: notifSendType,
+      title: notifSendTitle.trim(),
+      content: notifSendContent.trim(),
+    };
+    if (notifSendTarget.trim()) body.targetUserId = notifSendTarget.trim();
+    const res = await notifPost(body, token);
+    if (res.success) {
+      alert("通知已发送");
+      setShowNotifSend(false);
+      setNotifSendTarget(""); setNotifSendTitle(""); setNotifSendContent("");
+      loadNotifs(1);
+    } else {
+      alert(res.error || "发送失败");
+    }
+  };
+
   // ============================================================
   // 渲染
   // ============================================================
@@ -404,6 +541,10 @@ export function PickupApp({ onClose, loginUsername }: { onClose: () => void; log
         <div style={{ padding: "12px 16px", background: "#fff", borderBottom: "1px solid #eff3f4", display: "flex", alignItems: "center", gap: 10 }}>
           <button onClick={onBack} style={{ fontSize: 22, background: "none", border: "none", color: "#0f1419", cursor: "pointer" }}>‹</button>
           <div style={{ flex: 1, fontSize: 18, fontWeight: 800, color: "#f91880" }}>米米请就位</div>
+          <button onClick={() => setView({ kind: "notif" })} style={{ position: "relative", background: "none", border: "none", fontSize: 20, cursor: "pointer", padding: "4px 6px" }}>
+            🔔
+            {unreadCount > 0 && <span style={{ position: "absolute", top: -2, right: -4, background: "#ef4444", color: "#fff", fontSize: 10, fontWeight: 700, borderRadius: "50%", minWidth: 16, height: 16, display: "flex", alignItems: "center", justifyContent: "center", padding: "0 4px" }}>{unreadCount > 99 ? "99+" : unreadCount}</span>}
+          </button>
           <button onClick={() => setView({ kind: "create" })} style={{ background: "#f91880", color: "#fff", border: "none", borderRadius: 18, padding: "6px 14px", fontSize: 13, fontWeight: 600, cursor: "pointer" }}>+ 开楼</button>
         </div>
 
@@ -613,6 +754,10 @@ export function PickupApp({ onClose, loginUsername }: { onClose: () => void; log
         <div style={{ padding: "12px 16px", background: "#fff", borderBottom: "1px solid #eff3f4", display: "flex", alignItems: "center", gap: 10 }}>
           <button onClick={() => setView({ kind: "home" })} style={{ fontSize: 22, background: "none", border: "none", color: "#0f1419", cursor: "pointer" }}>‹</button>
           <div style={{ flex: 1, fontSize: 15, fontWeight: 700, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{post.title}</div>
+          <button onClick={() => setView({ kind: "notif" })} style={{ position: "relative", background: "none", border: "none", fontSize: 18, cursor: "pointer", padding: "4px 6px" }}>
+            🔔
+            {unreadCount > 0 && <span style={{ position: "absolute", top: -2, right: -4, background: "#ef4444", color: "#fff", fontSize: 10, fontWeight: 700, borderRadius: "50%", minWidth: 16, height: 16, display: "flex", alignItems: "center", justifyContent: "center", padding: "0 4px" }}>{unreadCount > 99 ? "99+" : unreadCount}</span>}
+          </button>
         </div>
 
         {/* 首楼 */}
@@ -779,6 +924,10 @@ export function PickupApp({ onClose, loginUsername }: { onClose: () => void; log
         <div style={{ padding: "12px 16px", background: "#fff", borderBottom: "1px solid #eff3f4", display: "flex", alignItems: "center", gap: 10 }}>
           <button onClick={() => setView({ kind: "post", post })} style={{ fontSize: 22, background: "none", border: "none", color: "#0f1419", cursor: "pointer" }}>‹</button>
           <div style={{ flex: 1, fontSize: 15, fontWeight: 700, textAlign: "center", marginRight: 30 }}>{reply.floor_no}楼 · {reply.author_display} 的回复</div>
+          <button onClick={() => setView({ kind: "notif" })} style={{ position: "relative", background: "none", border: "none", fontSize: 18, cursor: "pointer", padding: "4px 6px" }}>
+            🔔
+            {unreadCount > 0 && <span style={{ position: "absolute", top: -2, right: -4, background: "#ef4444", color: "#fff", fontSize: 10, fontWeight: 700, borderRadius: "50%", minWidth: 16, height: 16, display: "flex", alignItems: "center", justifyContent: "center", padding: "0 4px" }}>{unreadCount > 99 ? "99+" : unreadCount}</span>}
+          </button>
         </div>
 
         {/* 父评论 */}
@@ -860,6 +1009,104 @@ export function PickupApp({ onClose, loginUsername }: { onClose: () => void; log
               <div style={{ display: "flex", gap: 10 }}>
                 <button onClick={() => setShowReportSheet(false)} style={{ flex: 1, padding: 12, borderRadius: 20, border: "1px solid #eff3f4", background: "#fff", fontSize: 14, cursor: "pointer" }}>取消</button>
                 <button onClick={handleReport} disabled={!reportReason} style={{ flex: 1, padding: 12, borderRadius: 20, border: "none", background: reportReason ? "#f91880" : "#ccc", color: "#fff", fontSize: 14, fontWeight: 600, cursor: "pointer" }}>提交</button>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  // --- 通知中心 ---
+  if (view.kind === "notif") {
+    const totalPages = Math.ceil(notifTotal / 20);
+    return (
+      <div style={{ display: "flex", flexDirection: "column", height: "100%", background: "#f7f9f9" }}>
+        {/* 顶栏 */}
+        <div style={{ padding: "12px 16px", background: "#fff", borderBottom: "1px solid #eff3f4", display: "flex", alignItems: "center", gap: 10 }}>
+          <button onClick={() => setView({ kind: "home" })} style={{ fontSize: 22, background: "none", border: "none", color: "#0f1419", cursor: "pointer" }}>‹</button>
+          <div style={{ flex: 1, fontSize: 16, fontWeight: 700 }}>通知中心</div>
+          <button onClick={handleMarkAllRead} style={{ fontSize: 12, color: "#1d9bf0", background: "none", border: "none", cursor: "pointer" }}>全部已读</button>
+          {isAdmin && <button onClick={() => setShowNotifSend(true)} style={{ fontSize: 12, color: "#f91880", background: "#fff0f6", border: "none", borderRadius: 12, padding: "4px 10px", fontWeight: 600, cursor: "pointer" }}>📢 发通知</button>}
+        </div>
+
+        {/* Tab 切换 */}
+        <div style={{ padding: "10px 16px", background: "#fff", borderBottom: "1px solid #eff3f4", display: "flex", gap: 8 }}>
+          <button onClick={() => setNotifTab("all")} style={{ fontSize: 13, padding: "6px 16px", borderRadius: 16, border: "none", background: notifTab === "all" ? "#f91880" : "#eef1f3", color: notifTab === "all" ? "#fff" : "#536471", fontWeight: notifTab === "all" ? 600 : 400, cursor: "pointer" }}>全部</button>
+          <button onClick={() => setNotifTab("unread")} style={{ fontSize: 13, padding: "6px 16px", borderRadius: 16, border: "none", background: notifTab === "unread" ? "#f91880" : "#eef1f3", color: notifTab === "unread" ? "#fff" : "#536471", fontWeight: notifTab === "unread" ? 600 : 400, cursor: "pointer" }}>未读</button>
+        </div>
+
+        {/* 通知列表 */}
+        <div style={{ flex: 1, overflowY: "auto", padding: "8px 0" }}>
+          {notifError ? (
+            <div style={{ textAlign: "center", padding: 40, color: "#536471", fontSize: 13 }}>{notifError}</div>
+          ) : notifications.length === 0 ? (
+            <div style={{ textAlign: "center", padding: 60, color: "#536471" }}>暂无通知</div>
+          ) : notifications.map((n) => (
+            <div
+              key={n.id}
+              onClick={() => handleNotifClick(n)}
+              style={{ padding: "14px 16px", background: "#fff", borderBottom: "1px solid #eff3f4", cursor: "pointer", display: "flex", gap: 10 }}
+            >
+              <div style={{ width: 36, height: 36, borderRadius: "50%", background: "#f0f4f7", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 18, flexShrink: 0 }}>
+                {NOTIF_ICON[n.type] || "🔔"}
+              </div>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                  <span style={{ fontSize: 14, fontWeight: 700, color: "#0f1419" }}>{n.title}</span>
+                  {!n.readAt && <span style={{ width: 8, height: 8, borderRadius: "50%", background: "#ef4444", flexShrink: 0 }} />}
+                </div>
+                <div style={{ fontSize: 13, color: "#536471", marginTop: 3, lineHeight: 1.5, overflow: "hidden", textOverflow: "ellipsis", display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical" }}>{n.content}</div>
+                <div style={{ fontSize: 11, color: "#8899a6", marginTop: 4 }}>{timeAgo(n.createdAt)}</div>
+              </div>
+            </div>
+          ))}
+          {totalPages > 1 && (
+            <div style={{ display: "flex", justifyContent: "center", gap: 16, padding: 14, fontSize: 13, color: "#536471" }}>
+              {notifPage > 1 && <button onClick={() => loadNotifs(notifPage - 1)} style={{ background: "none", border: "none", color: "#1d9bf0", cursor: "pointer" }}>‹ 上一页</button>}
+              <span style={{ color: "#f91880", fontWeight: 700 }}>{notifPage}</span>
+              {notifPage < totalPages && <button onClick={() => loadNotifs(notifPage + 1)} style={{ background: "none", border: "none", color: "#1d9bf0", cursor: "pointer" }}>下一页 ›</button>}
+            </div>
+          )}
+        </div>
+
+        {/* 管理员发通知弹层 */}
+        {showNotifSend && (
+          <div style={{ position: "absolute", inset: 0, background: "rgba(0,0,0,.3)", zIndex: 100, display: "flex", flexDirection: "column" }}>
+            <div style={{ background: "#fff", borderRadius: "16px 16px 0 0", marginTop: "auto", padding: 20, maxHeight: "80%", overflowY: "auto" }}>
+              <div style={{ fontSize: 16, fontWeight: 700, marginBottom: 14 }}>📢 发送通知</div>
+              <div style={{ fontSize: 12, color: "#536471", marginBottom: 6 }}>目标用户ID（留空=全体）</div>
+              <input
+                value={notifSendTarget}
+                onChange={(e) => setNotifSendTarget(e.target.value)}
+                placeholder="留空发送给所有用户"
+                style={{ width: "100%", border: "1px solid #eff3f4", borderRadius: 10, padding: "10px 12px", fontSize: 13, outline: "none", marginBottom: 12, boxSizing: "border-box" }}
+              />
+              <div style={{ fontSize: 12, color: "#536471", marginBottom: 6 }}>标题</div>
+              <input
+                value={notifSendTitle}
+                onChange={(e) => setNotifSendTitle(e.target.value)}
+                placeholder="通知标题"
+                maxLength={50}
+                style={{ width: "100%", border: "1px solid #eff3f4", borderRadius: 10, padding: "10px 12px", fontSize: 13, outline: "none", marginBottom: 12, boxSizing: "border-box" }}
+              />
+              <div style={{ fontSize: 12, color: "#536471", marginBottom: 6 }}>内容</div>
+              <textarea
+                value={notifSendContent}
+                onChange={(e) => setNotifSendContent(e.target.value)}
+                placeholder="通知内容"
+                maxLength={500}
+                style={{ width: "100%", border: "1px solid #eff3f4", borderRadius: 10, padding: "10px 12px", fontSize: 13, outline: "none", minHeight: 80, resize: "vertical", boxSizing: "border-box", marginBottom: 12 }}
+              />
+              <div style={{ fontSize: 12, color: "#536471", marginBottom: 6 }}>类型</div>
+              <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 16 }}>
+                {[["admin_custom", "✉️ 自定义"], ["system_announce", "📢 公告"], ["admin_action", "🛡️ 管理操作"]].map(([val, label]) => (
+                  <button key={val} onClick={() => setNotifSendType(val)} style={{ fontSize: 12, padding: "6px 12px", borderRadius: 12, border: "none", background: notifSendType === val ? "#f91880" : "#eef1f3", color: notifSendType === val ? "#fff" : "#536471", fontWeight: notifSendType === val ? 600 : 400, cursor: "pointer" }}>{label}</button>
+                ))}
+              </div>
+              <div style={{ display: "flex", gap: 10 }}>
+                <button onClick={() => setShowNotifSend(false)} style={{ flex: 1, padding: 12, borderRadius: 20, border: "1px solid #eff3f4", background: "#fff", fontSize: 14, cursor: "pointer" }}>取消</button>
+                <button onClick={handleAdminSend} style={{ flex: 1, padding: 12, borderRadius: 20, border: "none", background: "#f91880", color: "#fff", fontSize: 14, fontWeight: 600, cursor: "pointer" }}>发送</button>
               </div>
             </div>
           </div>
