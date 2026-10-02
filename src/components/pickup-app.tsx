@@ -148,8 +148,29 @@ function timeAgo(ts: string): string {
 // ============================================================
 export function PickupApp({ onClose, loginUsername }: { onClose: () => void; loginUsername: string }) {
     const token = typeof window !== "undefined" ? localStorage.getItem("auth_token") || "" : "";
-    const user: User = { id: "", name: loginUsername, username: loginUsername, emoji: "🐰" };
+    const [me, setMe] = useState<{ name: string; emoji: string }>({ name: loginUsername, emoji: "🐰" });
+    const user: User = { id: "", name: me.name, username: loginUsername, emoji: me.emoji };
     const onBack = onClose;
+
+    // 启动时拉自己的论坛昵称
+    useEffect(() => {
+        (async () => {
+            try {
+                const res = await fetch("/api/auth", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ action: "get_profile", username: loginUsername }),
+                });
+                const json = await res.json();
+                if (json.success && json.profile) {
+                    setMe({
+                        name: json.profile.displayName || loginUsername,
+                        emoji: json.profile.emoji || "🐰",
+                    });
+                }
+            } catch { /* ignore */ }
+        })();
+    }, [loginUsername]);
   type View =
     | { kind: "home" }
     | { kind: "post"; post: Post }
@@ -185,7 +206,7 @@ export function PickupApp({ onClose, loginUsername }: { onClose: () => void; log
   const [newContent, setNewContent] = useState("");
   const [newTagIds, setNewTagIds] = useState<string[]>([]);
   const [newIdentityRequired, setNewIdentityRequired] = useState(true);
-  const [newHostLabel, setNewHostLabel] = useState("楼主");
+  const [newHostLabel, setNewHostLabel] = useState("");
   const [newIdentityEmoji, setNewIdentityEmoji] = useState("🐰");
   const [newIdentityName, setNewIdentityName] = useState("");
 
@@ -321,7 +342,7 @@ export function PickupApp({ onClose, loginUsername }: { onClose: () => void; log
         content: newContent.trim(),
         tagIds: newTagIds,
         identityRequired: newIdentityRequired,
-        hostLabel: newHostLabel || "楼主",
+        hostLabel: newHostLabel || me.name,
       });
       if (res.success) {
         setView({ kind: "post", post: res.post });
@@ -731,15 +752,17 @@ export function PickupApp({ onClose, loginUsername }: { onClose: () => void; log
               <input type="checkbox" checked={newIdentityRequired} onChange={(e) => setNewIdentityRequired(e.target.checked)} />
               <span>本楼需要演绎身份</span>
             </label>
-            <div style={{ fontSize: 12, color: "#536471", marginBottom: 10 }}>「楼主」称呼</div>
+            <div style={{ fontSize: 12, color: "#536471", marginBottom: 6 }}>你在这栋楼的角色名</div>
+            <div style={{ fontSize: 11, color: "#8899a6", marginBottom: 8 }}>默认为你的论坛昵称，也可以改成剧中角色名</div>
             <input
               value={newHostLabel}
               onChange={(e) => setNewHostLabel(e.target.value)}
-              placeholder="楼主"
+              placeholder={me.name}
               maxLength={10}
-              style={{ width: 120, border: "1px solid #eff3f4", borderRadius: 8, padding: "6px 10px", fontSize: 13, outline: "none" }}
+              style={{ width: 140, border: "1px solid #eff3f4", borderRadius: 8, padding: "6px 10px", fontSize: 13, outline: "none" }}
             />
-            <span style={{ marginLeft: 8, background: "#f91880", color: "#fff", fontSize: 10, padding: "1px 6px", borderRadius: 4, fontWeight: 600 }}>{newHostLabel || "楼主"}</span>
+            <span style={{ marginLeft: 8, background: "#f91880", color: "#fff", fontSize: 10, padding: "2px 8px", borderRadius: 4, fontWeight: 600 }}>楼主</span>
+            <div style={{ fontSize: 11, color: "#8899a6", marginTop: 6 }}>发帖后你将以「<b>{newHostLabel || me.name}</b>」的名字出现在楼内，旁边标注「楼主」</div>
           </div>
         </div>
       </div>
@@ -776,7 +799,7 @@ export function PickupApp({ onClose, loginUsername }: { onClose: () => void; log
           <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 12, paddingTop: 10, borderTop: "1px solid #f5f8fa" }}>
             <div style={{ width: 32, height: 32, borderRadius: "50%", background: "#ffe4ec", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16 }}>{post.owner_emoji || "🐰"}</div>
             <div>
-              <div style={{ fontSize: 13, fontWeight: 700 }}>{post.owner_display} <span style={{ background: "#f91880", color: "#fff", fontSize: 10, padding: "1px 6px", borderRadius: 4, fontWeight: 600 }}>{post.host_label || "楼主"}</span></div>
+              <div style={{ fontSize: 13, fontWeight: 700 }}>{post.host_label || post.owner_display} <span style={{ background: "#f91880", color: "#fff", fontSize: 10, padding: "1px 6px", borderRadius: 4, fontWeight: 600 }}>楼主</span></div>
               <div style={{ fontSize: 11, color: "#8899a6" }}>{timeAgo(post.created_at)}</div>
             </div>
           </div>

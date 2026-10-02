@@ -305,7 +305,7 @@ export async function POST(request: NextRequest) {
         const content = (body.content || "").toString().trim();
         const tagIds: string[] = body.tagIds || [];
         const identityRequired = body.identityRequired !== false;
-        const hostLabel = (body.hostLabel || "楼主").toString().trim().slice(0, 10);
+        const hostLabel = (body.hostLabel || "").toString().trim().slice(0, 10);
 
         if (!title || title.length > TITLE_MAX) return badRequest(`标题 1~${TITLE_MAX} 字`);
         if (!content || content.length > CONTENT_MAX) return badRequest(`内容不超过 ${CONTENT_MAX} 字`);
@@ -337,7 +337,7 @@ export async function POST(request: NextRequest) {
             content,
             tag_ids: tagIds,
             identity_required: identityRequired,
-            host_label: hostLabel,
+            host_label: hostLabel || userInfo.name,
           })
           .select()
           .single();
