@@ -15,6 +15,22 @@ interface ProfilePostCard {
   created_at: string;
 }
 
+interface PickupPost {
+  id: string;
+  title: string;
+  content: string;
+  author_id: string;
+  author_username: string;
+  tags: string[];
+  likes_count: number;
+  replies_count: number;
+  views_count: number;
+  is_pinned: boolean;
+  is_locked: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
 interface UserProfileData {
   id: string;
   username: string;
@@ -84,10 +100,16 @@ export default function UserProfileApp({
   onOpenUser,
 }: UserProfileAppProps) {
   const [profile, setProfile] = useState<UserProfileData | null>(null);
-  const [activeTab, setActiveTab] = useState<"posts" | "likes" | "favorites">("posts");
+  const [activeTab, setActiveTab] = useState<"posts" | "likes" | "favorites" | "pickup">("posts");
   const [posts, setPosts] = useState<ProfilePostCard[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState("");
+
+  // 推米 (pickup) 相关
+  const [pickupPosts, setPickupPosts] = useState<PickupPost[]>([]);
+  const [pickupPage, setPickupPage] = useState(1);
+  const [pickupLoading, setPickupLoading] = useState(false);
+  const [pickupTotal, setPickupTotal] = useState(0);
   const [avatarUploading, setAvatarUploading] = useState(false);
 
   // 关注相关
@@ -139,7 +161,7 @@ export default function UserProfileApp({
     };
   }, [username]);
 
-  async function switchTab(tab: "posts" | "likes" | "favorites") {
+  async function switchTab(tab: "posts" | "likes" | "favorites" | "pickup") {
     if (!profile) return;
     setActiveTab(tab);
     if (tab === "posts") {
@@ -149,10 +171,70 @@ export default function UserProfileApp({
       const r = await forumApi("user_likes", { userId: profile.id });
       if (r.success) setPosts((r.data as ProfilePostCard[]) || []);
       else alert(r.error || "加载失败");
-    } else {
+    } else if (tab === "favorites") {
       const r = await forumApi("user_favorites", { userId: profile.id });
       if (r.success) setPosts((r.data as ProfilePostCard[]) || []);
       else alert(r.error || "加载失败");
+    } else if (tab === "pickup") {
+      setPickupLoading(true);
+      setPickupPage(1);
+      try {
+        const token = localStorage.getItem("auth_token") || "";
+        const viewer = isSelf ? profile.username : "";
+        const params = new URLSearchParams({
+          action: "my_posts",
+          username: profile.username,
+          page: "1",
+          pageSize: "20",
+        });
+        if (viewer) params.set("viewer", viewer);
+        const res = await fetch("/api/pickup?" + params.toString(), {
+          headers: token ? { Authorization: "Bearer " + token } : {},
+        });
+        const json = (await res.json()) as { success: boolean; data?: PickupPost[]; total?: number; error?: string };
+        if (json.success) {
+          setPickupPosts(json.data || []);
+          setPickupTotal(json.total || 0);
+        } else {
+          alert(json.error || "加载演绎帖子失败");
+        }
+      } catch {
+        alert("加载演绎帖子失败");
+      } finally {
+        setPickupLoading(false);
+      }
+    }
+  }
+
+  async function loadMorePickup() {
+    if (!profile || pickupLoading) return;
+    const nextPage = pickupPage + 1;
+    setPickupLoading(true);
+    try {
+      const token = localStorage.getItem("auth_token") || "";
+      const viewer = isSelf ? profile.username : "";
+      const params = new URLSearchParams({
+        action: "my_posts",
+        username: profile.username,
+        page: String(nextPage),
+        pageSize: "20",
+      });
+      if (viewer) params.set("viewer", viewer);
+      const res = await fetch("/api/pickup?" + params.toString(), {
+        headers: token ? { Authorization: "Bearer " + token } : {},
+      });
+      const json = (await res.json()) as { success: boolean; data?: PickupPost[]; total?: number; error?: string };
+      if (json.success) {
+        setPickupPosts((prev) => [...prev, ...(json.data || [])]);
+        setPickupPage(nextPage);
+        setPickupTotal(json.total || 0);
+      } else {
+        alert(json.error || "加载失败");
+      }
+    } catch {
+      alert("加载失败");
+    } finally {
+      setPickupLoading(false);
     }
   }
 
@@ -302,6 +384,7 @@ export default function UserProfileApp({
   const emptyText = useMemo(() => {
     if (activeTab === "posts") return isSelf ? "还没有发布过帖子" : "TA还没有发布过帖子";
     if (activeTab === "likes") return "还没有点赞过帖子";
+    if (activeTab === "pickup") return "暂无演绎帖子";
     return "还没有收藏过帖子";
   }, [activeTab, isSelf]);
 
@@ -549,7 +632,8 @@ export default function UserProfileApp({
                     { key: "favorites", label: "收藏" },
                   ]
                 : []),
-            ] as { key: "posts" | "likes" | "favorites"; label: string }[]
+              { key: "pickup", label: "🎭 推米" },
+            ] as { key: "posts" | "likes" | "favorites" | "pickup"; label: string }[]
           ).map((tab) => (
             <button
               key={tab.key}
@@ -572,7 +656,83 @@ export default function UserProfileApp({
         </div>
 
         <div style={{ padding: "0 12px 16px" }}>
-          {loadError ? (
+          {activeTab === "pickup" ? (
+            pickupLoading && pickupPosts.length === 0 ? (
+              <div style={{ textAlign: "center", fontSize: 13, color: "#9ca3af", padding: "30px 0" }}>加载中...</div>
+            ) : pickupPosts.length === 0 ? (
+              <div style={{ textAlign: "center", fontSize: 13, color: "#9ca3af", padding: "30px 0", background: "#fff", borderRadius: 12 }}>
+                <div style={{ fontSize: 36, marginBottom: 8 }}>🎭</div>
+                暂无演绎帖子
+              </div>
+            ) : (
+              <>
+                {pickupPosts.map((post) => (
+                  <div
+                    key={post.id}
+                    onClick={() => onOpenPost?.(post.id)}
+                    style={{
+                      background: "#fff",
+                      borderRadius: 12,
+                      padding: 12,
+                      marginBottom: 8,
+                      border: "1px solid #f0f0f0",
+                      cursor: onOpenPost ? "pointer" : "default",
+                    }}
+                  >
+                    <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 6, flexWrap: "wrap" }}>
+                      {post.is_pinned && <span style={{ fontSize: 12 }}>📌</span>}
+                      {post.is_locked && <span style={{ fontSize: 12 }}>🔒</span>}
+                      {post.tags && post.tags.length > 0 && (
+                        <span style={{ fontSize: 11, padding: "2px 8px", borderRadius: 10, background: "#fff7ed", color: "#ea580c", fontWeight: 500 }}>
+                          {post.tags.join(", ")}
+                        </span>
+                      )}
+                      <span style={{ fontSize: 11, color: "#9ca3af", marginLeft: "auto" }}>
+                        {formatTime(post.created_at)}
+                      </span>
+                    </div>
+                    <h3
+                      style={{
+                        fontSize: 14,
+                        fontWeight: 600,
+                        color: "#1f2937",
+                        marginBottom: 8,
+                        overflow: "hidden",
+                        textOverflow: "ellipsis",
+                        whiteSpace: "nowrap",
+                      }}
+                    >
+                      {post.title}
+                    </h3>
+                    <div style={{ display: "flex", gap: 14, fontSize: 12, color: "#9ca3af" }}>
+                      <span>💬 {post.replies_count}</span>
+                      <span>❤️ {post.likes_count}</span>
+                      <span>👀 {post.views_count}</span>
+                    </div>
+                  </div>
+                ))}
+                {pickupPosts.length < pickupTotal && (
+                  <button
+                    onClick={loadMorePickup}
+                    disabled={pickupLoading}
+                    style={{
+                      width: "100%",
+                      padding: "10px 0",
+                      fontSize: 13,
+                      color: "#f97316",
+                      background: "#fff",
+                      border: "1px solid #fed7aa",
+                      borderRadius: 10,
+                      cursor: pickupLoading ? "not-allowed" : "pointer",
+                      marginTop: 4,
+                    }}
+                  >
+                    {pickupLoading ? "加载中..." : "加载更多"}
+                  </button>
+                )}
+              </>
+            )
+          ) : loadError ? (
             <div style={{ textAlign: "center", fontSize: 13, color: "#9ca3af", padding: "30px 0", background: "#fff", borderRadius: 12 }}>
               {loadError}
             </div>
