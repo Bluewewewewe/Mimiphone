@@ -48,6 +48,8 @@ import { InviteApp } from "@/components/invite-app";
 import UserProfileApp from "@/components/user-profile-app";
 import { AdminReviewApp } from "@/components/admin-review-app";
 import AppStoreApp from "@/components/app-store-app";
+import { VersionPopup } from "@/components/version-popup";
+import { ChangelogContent } from "@/components/changelog-app";
 import AppAdminApp from "@/components/admin/app-admin-app";
 import AdminDashboard from "@/components/admin-dashboard";
 import type { StoreAppItem } from "@/lib/apps";
@@ -2514,7 +2516,7 @@ export default function PhonePage() {
         }
     }, [loginUsername]);
 
-    const [meSubPage, setMeSubPage] = useState<"main" | "settings" | "identity" | "unlock" | "about" | "invite" | "account" | "profile" | "wallpaper" | "theme" | "change-password" | "knob-style" | "bio" | "redeem">("main");
+    const [meSubPage, setMeSubPage] = useState<"main" | "settings" | "identity" | "unlock" | "about" | "invite" | "account" | "profile" | "wallpaper" | "theme" | "change-password" | "knob-style" | "bio" | "redeem" | "changelog">("main");
 
     // 右滑返回：从屏幕左边缘开始向右滑，退回上一级
     useEffect(() => {
@@ -9116,6 +9118,11 @@ export default function PhonePage() {
                         <span className="me-menu-label">{unlockState.unlocked ? "身份已解锁" : "暗号解锁"}</span>
                         <span className="me-menu-arrow">›</span>
                     </div>
+                    <div className="me-menu-item" onClick={() => setMeSubPage("changelog")}>
+                        <span className="me-menu-icon">📋</span>
+                        <span className="me-menu-label">更新日志</span>
+                        <span className="me-menu-arrow">›</span>
+                    </div>
                     <div
                         className="me-menu-item"
                         onClick={() => {
@@ -9155,6 +9162,21 @@ export default function PhonePage() {
 
         if (meSubPage === "redeem") {
             return <RedeemCodePage authToken={authToken ?? ""} onClose={() => setMeSubPage("main")} />;
+        }
+
+        if (meSubPage === "changelog") {
+            return (
+                <div style={{ padding: 16 }}>
+                    <div style={{ fontSize: 16, fontWeight: 700, color: "#92400e", marginBottom: 16 }}>📋 更新日志</div>
+                    <ChangelogContent />
+                    <button
+                        className="identity-btn"
+                        onClick={() => setMeSubPage("main")}
+                        style={{ marginTop: 16, width: "100%", background: "#e5e7eb", color: "#78350f" }}>
+                        ← 返回
+                    </button>
+                </div>
+            );
         }
 
         if (meSubPage === "invite") {
@@ -13695,6 +13717,7 @@ export default function PhonePage() {
                 </div>
             )}
 
+            {isLoggedIn && !isPageLoading && !currentApp && <VersionPopup onOpenChangelog={() => { setCurrentApp("me"); setMeSubPage("settings"); }} />}
             {isLoggedIn && !isPageLoading && !currentApp && (
                 <>
                 <div className="phone-screen home-screen">
