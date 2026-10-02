@@ -14,15 +14,15 @@ export async function POST(request: NextRequest) {
     const { action } = body;
 
     const permissionAction: Record<string, AdminPermission> = {
-      list: "user_manage",
-      create: "user_manage",
-      update: "user_manage",
-      delete: "user_manage",
+      list: "schedule_manage",
+      create: "schedule_manage",
+      update: "schedule_manage",
+      delete: "schedule_manage",
     };
 
     let adminUser;
     try {
-      adminUser = await requirePermissionRequest(request, permissionAction[action as string] || "user_manage");
+      adminUser = await requirePermissionRequest(request, permissionAction[action as string] || "schedule_manage");
     } catch (err) {
       const message = err instanceof Error ? err.message : "鉴权失败";
       return jsonResponse({ success: false, error: message }, 401);

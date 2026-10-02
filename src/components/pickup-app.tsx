@@ -149,6 +149,8 @@ function timeAgo(ts: string): string {
 export function PickupApp({ onClose, loginUsername }: { onClose: () => void; loginUsername: string }) {
     const token = typeof window !== "undefined" ? localStorage.getItem("auth_token") || "" : "";
     const [me, setMe] = useState<{ name: string; emoji: string }>({ name: loginUsername, emoji: "🐰" });
+    const [myId, setMyId] = useState<string>("");
+    const [localTagNames, setLocalTagNames] = useState<Record<string, string>>({});
     const user: User = { id: "", name: me.name, username: loginUsername, emoji: me.emoji };
     const onBack = onClose;
 
@@ -167,6 +169,7 @@ export function PickupApp({ onClose, loginUsername }: { onClose: () => void; log
                         name: json.profile.displayName || loginUsername,
                         emoji: json.profile.emoji || "🐰",
                     });
+                    if (json.profile.id) setMyId(json.profile.id);
                 }
             } catch { /* ignore */ }
         })();
@@ -764,14 +767,14 @@ export function PickupApp({ onClose, loginUsername }: { onClose: () => void; log
               >＋ 选择标签</button>
             </div>
             {newTagIds.length === 0 ? (
-              <div style={{ fontSize: 12, color: "#8899a6" }}>暂未选择标签，点击右上角添加（可选）</div>
+              <div style={{ fontSize: 12, color: "#8899a6" }}>暂未选择标签，点击右上角选择或自建（自建需审核，你本人可立即使用）</div>
             ) : (
               <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
                 {newTagIds.map((id) => {
                   const t = tags.find((x) => x.id === id);
                   return (
                     <span key={id} style={{ fontSize: 12, padding: "4px 6px 4px 12px", borderRadius: 12, background: "#ffe4ec", color: "#f91880", fontWeight: 600, display: "inline-flex", alignItems: "center", gap: 6 }}>
-                      {t?.name || id.slice(0, 6)}
+                      {t?.name || localTagNames[id] || id.slice(0, 6)}
                       <button onClick={() => setNewTagIds(newTagIds.filter((x) => x !== id))} style={{ background: "none", border: "none", color: "#f91880", cursor: "pointer", padding: 0, fontSize: 14, lineHeight: 1 }}>×</button>
                     </span>
                   );
@@ -802,13 +805,19 @@ export function PickupApp({ onClose, loginUsername }: { onClose: () => void; log
                 </div>
                 <div style={{ flex: 1, overflowY: "auto", padding: "8px 16px 20px" }}>
                   {/* 已有标签（搜索时显示结果，不搜索时显示全部已审核） */}
-                  {(createTagQ.trim() ? createTagResults : tags.filter((t) => t.approved)).map((t) => {
+                  {(createTagQ.trim()
+                    ? createTagResults
+                    : tags.filter((t) => t.approved || (myId && (t as any).creator_id === myId))
+                  ).map((t) => {
                     const selected = newTagIds.includes(t.id);
                     return (
                       <div key={t.id} onClick={() => {
                         setNewTagIds(selected ? newTagIds.filter((x) => x !== t.id) : [...newTagIds, t.id]);
                       }} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "11px 4px", borderBottom: "1px solid #f5f8fa", cursor: "pointer" }}>
-                        <span style={{ fontSize: 14, color: selected ? "#f91880" : "#0f1419", fontWeight: selected ? 700 : 400 }}>{t.name}</span>
+                        <span style={{ fontSize: 14, color: selected ? "#f91880" : "#0f1419", fontWeight: selected ? 700 : 400 }}>
+                          {t.name}
+                          {!t.approved && <span style={{ fontSize: 10, color: "#f97316", marginLeft: 6 }}>待审核</span>}
+                        </span>
                         <span style={{ fontSize: 13 }}>{selected ? "✓" : "＋"}</span>
                       </div>
                     );
@@ -822,8 +831,13 @@ export function PickupApp({ onClose, loginUsername }: { onClose: () => void; log
                         const r = await apiPost({ action: "create_tag", token, name: createTagQ });
                         setCreatingTag(false);
                         if (r.success) {
-                          if (r.exists) alert("该标签已存在，可直接在列表中选择");
-                          else alert("标签创建成功，你可以立即使用；但发布的帖子需通过管理员审核后才会公开。标签通过后其他人也能使用。");
+                          if (r.exists) {
+                            alert("该标签已存在，已为你勾选");
+                          }
+                          if (r.tag?.id && !newTagIds.includes(r.tag.id)) {
+                            setNewTagIds([...newTagIds, r.tag.id]);
+                            setLocalTagNames((prev) => ({ ...prev, [r.tag.id]: r.tag.name }));
+                          }
                           setCreateTagQ("");
                           setCreateTagResults([]);
                         } else alert(r.error || "创建失败");

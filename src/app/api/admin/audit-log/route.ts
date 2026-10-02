@@ -3,7 +3,7 @@ import {
   requirePermissionRequest,
   logAudit,
 } from "@/lib/auth";
-import getSupabaseClient from "@/storage/database/supabase-client";
+import { getSupabaseClient } from "@/storage/database/supabase-client";
 
 function jsonResponse<T>(success: boolean, data?: T, error?: string) {
   return Response.json({ success, data, error });

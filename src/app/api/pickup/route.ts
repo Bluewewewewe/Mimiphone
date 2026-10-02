@@ -1,10 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
-import getSupabaseClient from "@/storage/database/supabase-client";
+import { getSupabaseClient } from "@/storage/database/supabase-client";
 import {
   requireAuth,
   requireAdmin,
   verifyToken,
   hasPermission,
+  hasPermissionDb,
   type VerifiedUser,
   type AdminPermission,
 } from "@/lib/auth";
@@ -29,8 +30,9 @@ async function requirePickupAuth(body: any): Promise<VerifiedUser> {
 
 async function requirePickupAdmin(body: any): Promise<VerifiedUser> {
   const user = await requireAdmin(bodyToken(body));
-  if (!hasPermission(user, "manage_content" as AdminPermission)) {
-    throw new Error("缺少内容管理权限");
+  const allowed = await hasPermissionDb(user, "pickup_manage");
+  if (!allowed) {
+    throw new Error("缺少权限：pickup_manage");
   }
   return user;
 }
@@ -372,18 +374,33 @@ export async function GET(request: NextRequest) {
       }
 
       case "admin_pending_posts": {
-        await requirePickupAdmin({ token: getToken });
+        const adminUser = await requirePickupAdmin({ token: getToken });
+        const scope = url.searchParams.get("scope") || "all"; // all | mine | unassigned
         const page = Math.max(1, parseInt(url.searchParams.get("page") || "1", 10));
         const pageSize = Math.min(50, parseInt(url.searchParams.get("pageSize") || "20", 10));
         const from = (page - 1) * pageSize;
-        const { data, error, count } = await supabase
+        let pq = supabase
           .from("pickup_posts")
           .select("*, pickup_tags(id, name)", { count: "exact" })
-          .eq("status", "pending")
+          .eq("status", "pending");
+        if (scope === "mine") pq = pq.eq("assigned_to", adminUser.id);
+        if (scope === "unassigned") pq = pq.is("assigned_to", null);
+        const { data, error, count } = await pq
           .order("created_at", { ascending: true })
           .range(from, from + pageSize - 1);
         if (error) throw error;
-        return NextResponse.json({ success: true, posts: data || [], total: count || 0, page });
+        const adminIds = (data || []).map((x: any) => x.assigned_to).filter(Boolean);
+        let nameMap = new Map();
+        if (adminIds.length) {
+          const { data: admins } = await supabase
+            .from("users").select("id, nickname, username").in("id", adminIds);
+          nameMap = new Map((admins || []).map((a: any) => [a.id, a.nickname || a.username]));
+        }
+        const postsOut = (data || []).map((x: any) => ({
+          ...x,
+          assigned_to_name: x.assigned_to ? (nameMap.get(x.assigned_to) || null) : null,
+        }));
+        return NextResponse.json({ success: true, posts: postsOut, total: count || 0, page });
       }
 
       default:
@@ -866,7 +883,7 @@ export async function POST(request: NextRequest) {
 
         if (decision === "approve") {
           // 帖子公开；同时通过其携带的所有未审核标签，并累加标签使用数
-          await supabase.from("pickup_posts").update({ status: "active", updated_at: new Date().toISOString() }).eq("id", postId);
+          await supabase.from("pickup_posts").update({ status: "active", reviewed_by: (await requirePickupAdmin(body)).id, reviewed_at: new Date().toISOString(), updated_at: new Date().toISOString() }).eq("id", postId);
 
           const tagIds: string[] = targetPost.tag_ids || [];
           if (tagIds.length > 0) {
@@ -894,6 +911,25 @@ export async function POST(request: NextRequest) {
           relatedPostId: postId,
         });
 
+        return NextResponse.json({ success: true });
+      }
+
+      case "admin_assign_post": {
+        // 指派待审楼：body {postId, adminId?}；adminId 为空=认领给自己
+        const adminUser = await requirePickupAdmin(body);
+        const postId = body.postId;
+        const targetAdminId = body.adminId || adminUser.id;
+        if (!postId) return badRequest("缺少 postId");
+        const { data: tAdmin } = await supabase
+          .from("users").select("id, role, admin_permissions").eq("id", targetAdminId).single();
+        if (!tAdmin) return badRequest("目标管理员不存在");
+        if (tAdmin.role !== "super_admin") {
+          const perms: string[] = (tAdmin.admin_permissions as string[]) || [];
+          if (!perms.includes("pickup_manage")) return badRequest("该管理员没有「请就位」审核权限");
+        }
+        const { error } = await supabase
+          .from("pickup_posts").update({ assigned_to: targetAdminId }).eq("id", postId);
+        if (error) throw error;
         return NextResponse.json({ success: true });
       }
 
@@ -1004,7 +1040,7 @@ export async function DELETE(request: NextRequest) {
 
         if (decision === "approve") {
           // 帖子公开；同时通过其携带的所有未审核标签，并累加标签使用数
-          await supabase.from("pickup_posts").update({ status: "active", updated_at: new Date().toISOString() }).eq("id", postId);
+          await supabase.from("pickup_posts").update({ status: "active", reviewed_by: (await requirePickupAdmin(body)).id, reviewed_at: new Date().toISOString(), updated_at: new Date().toISOString() }).eq("id", postId);
 
           const tagIds: string[] = targetPost.tag_ids || [];
           if (tagIds.length > 0) {

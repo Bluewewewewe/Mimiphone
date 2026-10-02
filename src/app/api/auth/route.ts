@@ -667,7 +667,7 @@ export async function POST(request: NextRequest) {
       }
       const { data, error } = await supabase
         .from("users")
-        .select("username, display_name, avatar_url, user_bio")
+        .select("id, username, display_name, avatar_url, user_bio, emoji")
         .eq("username", String(username))
         .maybeSingle();
       if (error) {
@@ -679,9 +679,11 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({
         success: true,
         profile: {
+          id: data.id,
           username: data.username,
           displayName: data.display_name,
           avatarUrl: data.avatar_url || "",
+          emoji: (data as any).emoji || "🐰",
           bio: data.user_bio || "",
         },
       });

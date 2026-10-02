@@ -110,6 +110,8 @@ export type AdminPermission =
     | "user_manage"
     | "invite_manage"
     | "forum_manage"
+    | "pickup_manage"
+    | "schedule_manage"
     | "stats_view"
     | "tree_view"
     | "system_setting"
@@ -125,6 +127,8 @@ const ROLE_PERMISSIONS: Record<string, AdminPermission[]> = {
         "user_manage",
         "invite_manage",
         "forum_manage",
+        "pickup_manage",
+        "schedule_manage",
         "stats_view",
         "tree_view",
         "system_setting",
@@ -133,16 +137,45 @@ const ROLE_PERMISSIONS: Record<string, AdminPermission[]> = {
         "audit_log",
         "app_manage",
     ],
-    admin: ["user_review", "user_ban", "user_manage", "invite_manage", "forum_manage", "stats_view", "tree_view", "review_queue", "audit_log"],
+    admin: ["user_review", "user_ban", "user_manage", "invite_manage", "forum_manage", "pickup_manage", "schedule_manage", "stats_view", "tree_view", "review_queue", "audit_log"],
 };
 
 export function hasPermission(user: VerifiedUser, permission: AdminPermission): boolean {
+    // 仅同步判断（用于无法访问 DB 的场景）；后端鉴权请用 requirePermissionRequest
     return ROLE_PERMISSIONS[user.role]?.includes(permission) ?? false;
+}
+
+/**
+ * 读取管理员的实际生效权限：
+ * - super_admin：拥有全部权限
+ * - admin：优先用 users.admin_permissions 单独分配；该字段为空时回退到角色默认权限
+ */
+export async function loadUserPermissions(user: VerifiedUser): Promise<Set<AdminPermission>> {
+    if (user.role === "super_admin") {
+        return new Set<AdminPermission>(ROLE_PERMISSIONS.super_admin);
+    }
+    const supabase = getSupabaseClient();
+    const { data } = await supabase
+        .from("users")
+        .select("admin_permissions")
+        .eq("id", user.id)
+        .single();
+    const assigned = (data?.admin_permissions as AdminPermission[] | null) ?? null;
+    if (assigned && Array.isArray(assigned) && assigned.length > 0) {
+        return new Set<AdminPermission>(assigned);
+    }
+    return new Set<AdminPermission>(ROLE_PERMISSIONS.admin ?? []);
+}
+
+export async function hasPermissionDb(user: VerifiedUser, permission: AdminPermission): Promise<boolean> {
+    const perms = await loadUserPermissions(user);
+    return perms.has(permission);
 }
 
 export async function requirePermissionRequest(request: NextRequest, permission: AdminPermission): Promise<VerifiedUser> {
     const user = await requireAdminRequest(request);
-    if (!hasPermission(user, permission)) {
+    const allowed = await hasPermissionDb(user, permission);
+    if (!allowed) {
         throw new Error(`缺少权限：${permission}`);
     }
     return user;

@@ -4,7 +4,7 @@ import {
   logAudit,
   type AdminPermission,
 } from "@/lib/auth";
-import getSupabaseClient from "@/storage/database/supabase-client";
+import { getSupabaseClient } from "@/storage/database/supabase-client";
 
 const ALL_PERMISSIONS: AdminPermission[] = [
   "stats_view",
@@ -13,8 +13,11 @@ const ALL_PERMISSIONS: AdminPermission[] = [
   "user_manage",
   "invite_manage",
   "forum_manage",
+  "pickup_manage",
+  "schedule_manage",
   "tree_view",
   "system_setting",
+  "review_queue",
   "permissions",
   "audit_log",
   "app_manage",

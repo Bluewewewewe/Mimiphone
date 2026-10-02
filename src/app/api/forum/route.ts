@@ -1,9 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
-import getSupabaseClient from "@/storage/database/supabase-client";
+import { getSupabaseClient } from "@/storage/database/supabase-client";
 import {
   requireAuth,
   requireAdmin,
   hasPermission,
+  hasPermissionDb,
   logAudit,
   type VerifiedUser,
   type AdminPermission,
@@ -108,7 +109,8 @@ async function requireForumAuth(body: any): Promise<VerifiedUser> {
 
 async function requireForumPermission(body: any, permission: AdminPermission): Promise<VerifiedUser> {
   const user = await requireAdmin(bodyToken(body));
-  if (!hasPermission(user, permission)) {
+  const ok = await hasPermissionDb(user, permission);
+  if (!ok) {
     throw new Error(`缺少权限：${permission}`);
   }
   return user;
@@ -170,12 +172,32 @@ export async function POST(request: NextRequest) {
 
     if (action === "list") {
       const { section, search, feed } = body;
+      // 识别当前用户：待审帖只有作者本人能在列表里看到
+      let viewerId: string | null = null;
+      let viewerIsAdmin = false;
+      if (body.token) {
+        try {
+          const vu = await requireForumAuth(body);
+          viewerId = vu.userId;
+          try {
+            await requireForumPermission(body, "forum_manage");
+            viewerIsAdmin = true;
+          } catch { viewerIsAdmin = false; }
+        } catch { /* 未登录只看公开帖 */ }
+      }
       let query = supabase
         .from("forum_posts")
         .select("*, forum_replies(count), forum_likes(count), forum_favorites(count)")
         .is("deleted_at", null)
         .order("is_pinned", { ascending: false })
         .order("created_at", { ascending: false });
+      if (viewerIsAdmin) {
+        // 管理员可见全部（含待审）
+      } else if (viewerId) {
+        query = query.or(`post_status.eq.active,and(post_status.eq.pending,author_id.eq.${viewerId})`);
+      } else {
+        query = query.eq("post_status", "active");
+      }
       // 关注动态：只看自己关注的人发的帖
       if (feed === "following") {
         const me = await requireForumAuth(body);
@@ -244,6 +266,21 @@ export async function POST(request: NextRequest) {
           { status: 404 }
         );
       }
+      if (post.post_status && post.post_status !== "active") {
+        let allowed = false;
+        if (body.token) {
+          try {
+            const vu = await requireForumAuth(body);
+            if (vu.userId === post.author_id) allowed = true;
+            if (!allowed) {
+              try { await requireForumPermission(body, "forum_manage"); allowed = true; } catch { /* */ }
+            }
+          } catch { /* */ }
+        }
+        if (!allowed) {
+          return NextResponse.json({ success: false, error: "帖子不存在" }, { status: 404 });
+        }
+      }
       // 统一回复详情字段名，避免前端读错；附带计数
       const rawReplies: any[] = Array.isArray(post.forum_replies) ? post.forum_replies : [];
       const im = await buildUserInfoMap(supabase, [post.author_id, ...rawReplies.map((r) => r.author_id)]);
@@ -299,6 +336,25 @@ export async function POST(request: NextRequest) {
         return badRequest("板块不存在或已关闭");
       }
 
+      // 发言审核：管理员直发；普通用户历史发帖不足 3 条时，新帖先待审
+      let needReview = false;
+      let isForumAdmin = false;
+      try {
+        await requireForumPermission(body, "forum_manage");
+        isForumAdmin = true;
+      } catch { isForumAdmin = false; }
+
+      if (!isForumAdmin && sectionId !== "announce") {
+        const { count } = await supabase
+          .from("forum_posts")
+          .select("id", { count: "exact", head: true })
+          .eq("author_id", user.userId)
+          .is("deleted_at", null)
+          .neq("post_status", "pending");
+        const approvedSoFar = count ?? 0;
+        needReview = approvedSoFar < 3;
+      }
+
       const insert: Record<string, unknown> = {
         title: cleanTitle,
         content: cleanContent,
@@ -306,6 +362,7 @@ export async function POST(request: NextRequest) {
         author_id: user.userId,
         author_name: user.username,
         is_pinned: sectionId === "announce", // 官方公告创建即置顶
+        post_status: needReview ? "pending" : "active",
         bug_status: sectionId === "bug-report" ? "pending" : null,
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
@@ -316,7 +373,7 @@ export async function POST(request: NextRequest) {
         .select()
         .single();
       if (error) throw error;
-      return NextResponse.json({ success: true, data });
+      return NextResponse.json({ success: true, data, pendingReview: needReview });
     }
 
     if (action === "reply") {
@@ -538,6 +595,99 @@ export async function POST(request: NextRequest) {
         .eq("id", postId);
       if (error) throw error;
       await logAudit(adminUser.id, adminUser.username, action, "forum_post", postId);
+      return NextResponse.json({ success: true });
+    }
+
+    // ===== 发言审核队列 =====
+    if (action === "admin_pending_list") {
+      const adminUser = await requireForumPermission(body, "forum_manage");
+      const scope = body.scope || "all";
+      let fq = supabase
+        .from("forum_posts")
+        .select("*, forum_replies(count)")
+        .is("deleted_at", null)
+        .eq("post_status", "pending");
+      if (scope === "mine") fq = fq.eq("assigned_to", adminUser.id);
+      if (scope === "unassigned") fq = fq.is("assigned_to", null);
+      const { data, error } = await fq.order("created_at", { ascending: true });
+      if (error) throw error;
+      const infoMap = await buildUserInfoMap(supabase, (data || []).map((x) => x.author_id));
+      const adminIds = (data || []).map((x:any) => x.assigned_to).filter(Boolean);
+      let aMap = new Map();
+      if (adminIds.length) {
+        const { data: admins } = await supabase.from("users").select("id, nickname, username").in("id", adminIds);
+        aMap = new Map((admins||[]).map((a:any)=>[a.id, a.nickname||a.username]));
+      }
+      const posts = (data || []).map((p2) => {
+        const info = infoMap.get(p2.author_id);
+        return {
+          ...p2,
+          author_name: info?.name || p2.author_name,
+          author_username: info?.username || "",
+          author_avatar: info?.avatar || "",
+          replyCount: p2.forum_replies?.[0]?.count ?? 0,
+          assigned_to_name: p2.assigned_to ? (aMap.get(p2.assigned_to) || null) : null,
+        };
+      });
+      await logAudit(adminUser.id, adminUser.username, "view_pending_forum", "list", adminUser.id);
+      return NextResponse.json({ success: true, data: posts });
+    }
+
+    if (action === "admin_assign_post") {
+      const adminUser = await requireForumPermission(body, "forum_manage");
+      const { postId, adminId } = body;
+      if (typeof postId !== "string" || !UUID_RE.test(postId)) return badRequest("帖子ID无效");
+      const targetAdminId = adminId || adminUser.id;
+      const { data: tAdmin } = await supabase
+        .from("users").select("id, role, admin_permissions").eq("id", targetAdminId).single();
+      if (!tAdmin) return badRequest("目标管理员不存在");
+      if (tAdmin.role !== "super_admin") {
+        const perms: string[] = (tAdmin.admin_permissions as string[]) || [];
+        if (!perms.includes("forum_manage")) return badRequest("该管理员没有论坛审核权限");
+      }
+      const { error } = await supabase.from("forum_posts").update({ assigned_to: targetAdminId }).eq("id", postId);
+      if (error) throw error;
+      return NextResponse.json({ success: true });
+    }
+
+    if (action === "admin_review_post") {
+      const adminUser = await requireForumPermission(body, "forum_manage");
+      const { postId, decision, reason } = body;
+      if (typeof postId !== "string" || !UUID_RE.test(postId)) return badRequest("帖子ID无效");
+      if (decision !== "approve" && decision !== "reject") return badRequest("decision 非法");
+
+      const { data: target } = await supabase
+        .from("forum_posts").select("id, author_id, title").eq("id", postId).single();
+      if (!target) return badRequest("帖子不存在");
+
+      if (decision === "approve") {
+        const { error } = await supabase
+          .from("forum_posts")
+          .update({ post_status: "active", reviewed_by: adminUser.id, reviewed_at: new Date().toISOString(), updated_at: new Date().toISOString() })
+          .eq("id", postId);
+        if (error) throw error;
+      } else {
+        const { error } = await supabase
+          .from("forum_posts")
+          .update({ deleted_at: new Date().toISOString(), updated_at: new Date().toISOString() })
+          .eq("id", postId);
+        if (error) throw error;
+      }
+      await logAudit(adminUser.id, adminUser.username, "forum_" + decision, "forum_post", postId, { reason: reason || null });
+
+      // 通知作者
+      try {
+        await supabase.from("notifications").insert({
+          user_id: target.author_id,
+          type: "admin_action",
+          title: decision === "approve" ? "你的帖子已通过审核" : "你的帖子未通过审核",
+          content: decision === "approve"
+            ? `你发布的《${target.title}》已通过审核并公开展示。`
+            : `你发布的《${target.title}》未通过审核。${reason ? "原因：" + reason : ""}`,
+          related_post_id: postId,
+        });
+      } catch { /* 通知失败不阻断 */ }
+
       return NextResponse.json({ success: true });
     }
 

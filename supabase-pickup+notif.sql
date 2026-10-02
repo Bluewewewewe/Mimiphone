@@ -26,6 +26,8 @@ create index if not exists idx_pickup_posts_owner on pickup_posts(owner_id);
 create index if not exists idx_pickup_posts_status on pickup_posts(status);
 create index if not exists idx_pickup_posts_pending
   on pickup_posts(status, created_at desc) where status = 'pending';
+create index if not exists idx_pickup_posts_assigned
+  on pickup_posts(assigned_to) where status = 'pending';
 create index if not exists idx_pickup_posts_tag on pickup_posts using gin(tag_ids);
 create index if not exists idx_pickup_posts_created on pickup_posts(created_at desc);
 

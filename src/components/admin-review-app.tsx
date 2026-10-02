@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { ContentQueue } from "@/components/content-queue";
 
 type ReviewUser = {
     id: string;
@@ -619,57 +620,7 @@ export function AdminReviewApp({ loginUsername, onClose }: { loginUsername: stri
                 )}
 
                 {tab === "pending" && (
-                    <>
-                        {pendingLoading ? (
-                            <div style={{ textAlign: "center", padding: 40, color: "#c2410c", fontSize: 13 }}>加载中...</div>
-                        ) : pendingPosts.length === 0 ? (
-                            <div style={{ textAlign: "center", padding: 40, color: "#c2410c", fontSize: 13 }}>
-                                <div style={{ fontSize: 32, marginBottom: 8 }}>🎉</div>
-                                暂无待审核的楼
-                            </div>
-                        ) : (
-                            pendingPosts.map(post => (
-                                <div key={post.id} style={{
-                                    background: "rgba(255,255,255,0.85)",
-                                    borderRadius: 16, padding: 12, marginBottom: 10,
-                                    border: "1px solid #fed7aa", boxShadow: "0 2px 8px rgba(249,115,22,0.08)"
-                                }}>
-                                    <div style={{ fontSize: 14, fontWeight: 700, color: "#7c2d12", marginBottom: 4 }}>
-                                        {post.title}
-                                    </div>
-                                    <div style={{ fontSize: 11, color: "#9a3412", opacity: 0.85, marginBottom: 4 }}>
-                                        楼主：{post.owner_display || post.owner_name || "—"} · {formatTime(post.created_at)}
-                                    </div>
-                                    {post.content && (
-                                        <div style={{ fontSize: 12, color: "#555", marginBottom: 6, display: "-webkit-box", WebkitLineClamp: 3, WebkitBoxOrient: "vertical", overflow: "hidden" }}>
-                                            {post.content}
-                                        </div>
-                                    )}
-                                    {post.pickup_tags && post.pickup_tags.length > 0 && (
-                                        <div style={{ display: "flex", flexWrap: "wrap", gap: 4, marginBottom: 8 }}>
-                                            {post.pickup_tags.map((t: any) => (
-                                                <span key={t.id} style={{ fontSize: 10, background: "#fff7ed", color: "#c2410c", borderRadius: 8, padding: "2px 8px", border: "1px solid #fed7aa" }}>
-                                                    {t.name}
-                                                </span>
-                                            ))}
-                                        </div>
-                                    )}
-                                    <div style={{ display: "flex", gap: 8 }}>
-                                        <button onClick={() => handleReviewPost(post.id, "approve")} style={{
-                                            flex: 1, padding: "7px 0", borderRadius: 10, border: "none",
-                                            background: "linear-gradient(135deg, #ea580c, #f97316)",
-                                            color: "#fff", fontSize: 12, fontWeight: 700, cursor: "pointer"
-                                        }}>通过（帖子和新标签同时生效）</button>
-                                        <button onClick={() => handleReviewPost(post.id, "reject")} style={{
-                                            flex: 1, padding: "7px 0", borderRadius: 10, border: "none",
-                                            background: "rgba(239,83,80,0.1)", color: "#c62828",
-                                            fontSize: 12, fontWeight: 700, cursor: "pointer"
-                                        }}>拒绝</button>
-                                    </div>
-                                </div>
-                            ))
-                        )}
-                    </>
+                    <ContentQueue token={token} loginUsername={loginUsername} />
                 )}
 
                 {tab === "posts" && (
