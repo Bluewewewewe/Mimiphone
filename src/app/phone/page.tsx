@@ -42,6 +42,7 @@ import {
 } from "@/lib/unlock-config";
 
 import { ForumApp } from "@/components/forum-app";
+import { PickupApp } from "@/components/pickup-app";
 import { AdminApp } from "@/components/admin-app";
 import { InviteApp } from "@/components/invite-app";
 import UserProfileApp from "@/components/user-profile-app";
@@ -542,6 +543,11 @@ const FIRST_PAGE_APPS: AppItem[] = [{
     label: "迷你小作坊",
     color: "#059669"
 }, {
+    id: "pickup",
+    emoji: "🎭",
+    label: "米米请就位",
+    color: "#f91880"
+}, {
     id: "lpmi",
     emoji: "🌽",
     label: "LPMI测试",
@@ -602,7 +608,7 @@ const SECOND_PAGE_APPS = [{
 
 const ALL_HOME_APPS = [...FIRST_PAGE_APPS, ...SECOND_PAGE_APPS];
 
-const DEFAULT_DOCK_APP_IDS = ["settings", "mimicosmo", "miniworkshop", "forum"];
+const DEFAULT_DOCK_APP_IDS = ["settings", "mimicosmo", "miniworkshop", "forum", "pickup"];
 const DOCK_APPS: AppItem[] = DEFAULT_DOCK_APP_IDS.map(id => {
     const app = ALL_HOME_APPS.find(a => a.id === id);
     if (app) return app;
@@ -11167,6 +11173,8 @@ export default function PhonePage() {
         case "mimicosmo":
         case "miniworkshop":
             return null;
+        case "pickup":
+            return renderPickup();
         case "forum":
             return renderForum();
         case "user-profile":
@@ -11220,6 +11228,15 @@ export default function PhonePage() {
                     外部应用加载中...
                 </div>
             </div>
+        );
+    }
+
+    function renderPickup() {
+        return (
+            <PickupApp
+                onClose={() => setCurrentApp(null)}
+                loginUsername={loginUsername}
+            />
         );
     }
 
