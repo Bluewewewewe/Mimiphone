@@ -225,6 +225,11 @@ export function PickupApp({ onClose, loginUsername }: { onClose: () => void; log
 
   // 标签搜索/创建
   const [showTagSearch, setShowTagSearch] = useState(false);
+  // 开楼页标签选择弹层
+  const [showCreateTagPicker, setShowCreateTagPicker] = useState(false);
+  const [createTagQ, setCreateTagQ] = useState("");
+  const [createTagResults, setCreateTagResults] = useState<Tag[]>([]);
+  const [creatingTag, setCreatingTag] = useState(false);
   const [tagSearchQ, setTagSearchQ] = useState("");
   const [tagSearchResults, setTagSearchResults] = useState<Tag[]>([]);
 
@@ -732,18 +737,89 @@ export function PickupApp({ onClose, loginUsername }: { onClose: () => void; log
           />
 
           {/* 标签 */}
-          <div style={{ marginBottom: 12 }}>
-            <div style={{ fontSize: 12, color: "#536471", marginBottom: 6 }}>标签</div>
-            <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-              {tags.filter((t) => t.approved).slice(0, 8).map((t) => (
-                <button
-                  key={t.id}
-                  onClick={() => setNewTagIds(newTagIds.includes(t.id) ? newTagIds.filter((x) => x !== t.id) : [...newTagIds, t.id])}
-                  style={{ fontSize: 12, padding: "4px 12px", borderRadius: 12, border: "none", background: newTagIds.includes(t.id) ? "#f91880" : "#eef1f3", color: newTagIds.includes(t.id) ? "#fff" : "#536471", cursor: "pointer" }}
-                >{t.name}</button>
-              ))}
+          <div style={{ marginBottom: 12, background: "#fff", borderRadius: 12, padding: 14, border: "1px solid #eff3f4" }}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
+              <span style={{ fontSize: 13, fontWeight: 700 }}>标签 {newTagIds.length > 0 && <span style={{ color: "#f91880" }}>（已选 {newTagIds.length}）</span>}</span>
+              <button
+                onClick={() => { setCreateTagQ(""); setCreateTagResults([]); setShowCreateTagPicker(true); }}
+                style={{ fontSize: 12, padding: "5px 12px", borderRadius: 14, border: "none", background: "#f91880", color: "#fff", fontWeight: 600, cursor: "pointer" }}
+              >＋ 选择标签</button>
             </div>
+            {newTagIds.length === 0 ? (
+              <div style={{ fontSize: 12, color: "#8899a6" }}>暂未选择标签，点击右上角添加（可选）</div>
+            ) : (
+              <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                {newTagIds.map((id) => {
+                  const t = tags.find((x) => x.id === id);
+                  return (
+                    <span key={id} style={{ fontSize: 12, padding: "4px 6px 4px 12px", borderRadius: 12, background: "#ffe4ec", color: "#f91880", fontWeight: 600, display: "inline-flex", alignItems: "center", gap: 6 }}>
+                      {t?.name || id.slice(0, 6)}
+                      <button onClick={() => setNewTagIds(newTagIds.filter((x) => x !== id))} style={{ background: "none", border: "none", color: "#f91880", cursor: "pointer", padding: 0, fontSize: 14, lineHeight: 1 }}>×</button>
+                    </span>
+                  );
+                })}
+              </div>
+            )}
           </div>
+
+          {/* 开楼页标签选择弹层 */}
+          {showCreateTagPicker && (
+            <div onClick={() => setShowCreateTagPicker(false)} style={{ position: "absolute", inset: 0, background: "rgba(0,0,0,.4)", zIndex: 120, display: "flex" }}>
+              <div onClick={(e) => e.stopPropagation()} style={{ background: "#fff", borderRadius: "18px 18px 0 0", maxHeight: "78%", width: "100%", marginTop: "auto", display: "flex", flexDirection: "column" }}>
+                <div style={{ padding: "14px 16px", borderBottom: "1px solid #eff3f4", display: "flex", alignItems: "center", gap: 10 }}>
+                  <button onClick={() => setShowCreateTagPicker(false)} style={{ fontSize: 20, background: "none", border: "none", cursor: "pointer" }}>×</button>
+                  <input
+                    value={createTagQ}
+                    onChange={async (e) => {
+                      const q = e.target.value;
+                      setCreateTagQ(q);
+                      if (q.trim()) {
+                        const r = await apiGet("tags", { q: q.trim() }, token);
+                        if (r.success) setCreateTagResults(r.tags || []);
+                      } else setCreateTagResults([]);
+                    }}
+                    placeholder="搜索标签，没有可直接创建"
+                    style={{ flex: 1, background: "#eef1f3", border: "none", borderRadius: 16, padding: "9px 14px", fontSize: 13, outline: "none" }}
+                  />
+                </div>
+                <div style={{ flex: 1, overflowY: "auto", padding: "8px 16px 20px" }}>
+                  {/* 已有标签（搜索时显示结果，不搜索时显示全部已审核） */}
+                  {(createTagQ.trim() ? createTagResults : tags.filter((t) => t.approved)).map((t) => {
+                    const selected = newTagIds.includes(t.id);
+                    return (
+                      <div key={t.id} onClick={() => {
+                        setNewTagIds(selected ? newTagIds.filter((x) => x !== t.id) : [...newTagIds, t.id]);
+                      }} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "11px 4px", borderBottom: "1px solid #f5f8fa", cursor: "pointer" }}>
+                        <span style={{ fontSize: 14, color: selected ? "#f91880" : "#0f1419", fontWeight: selected ? 700 : 400 }}>{t.name}</span>
+                        <span style={{ fontSize: 13 }}>{selected ? "✓" : "＋"}</span>
+                      </div>
+                    );
+                  })}
+                  {/* 创建新标签 */}
+                  {createTagQ.trim() && !createTagResults.some((t) => t.name === (createTagQ.startsWith("#") ? createTagQ : `#${createTagQ}`)) && (
+                    <button
+                      disabled={creatingTag}
+                      onClick={async () => {
+                        setCreatingTag(true);
+                        const r = await apiPost({ action: "create_tag", token, name: createTagQ });
+                        setCreatingTag(false);
+                        if (r.success) {
+                          if (r.exists) alert("该标签已存在，可直接在列表中选择");
+                          else alert("标签已提交，等待管理员在「用户审核 → 标签审核」中通过后即可使用");
+                          setCreateTagQ("");
+                          setCreateTagResults([]);
+                        } else alert(r.error || "创建失败");
+                      }}
+                      style={{ marginTop: 14, width: "100%", background: "#f91880", color: "#fff", border: "none", borderRadius: 20, padding: "11px", fontSize: 14, fontWeight: 600, cursor: "pointer", opacity: creatingTag ? 0.6 : 1 }}
+                    >{creatingTag ? "提交中..." : `创建「${createTagQ.startsWith("#") ? createTagQ : "#" + createTagQ}」（需审核）`}</button>
+                  )}
+                </div>
+                <div style={{ padding: "10px 16px", borderTop: "1px solid #eff3f4" }}>
+                  <button onClick={() => setShowCreateTagPicker(false)} style={{ width: "100%", background: "#f91880", color: "#fff", border: "none", borderRadius: 18, padding: "11px", fontSize: 15, fontWeight: 700, cursor: "pointer" }}>完成（已选 {newTagIds.length}）</button>
+                </div>
+              </div>
+            </div>
+          )}
 
           {/* 楼规 */}
           <div style={{ background: "#fff", borderRadius: 12, padding: 14, border: "1px solid #eff3f4" }}>

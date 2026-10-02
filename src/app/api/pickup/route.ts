@@ -578,7 +578,7 @@ export async function POST(request: NextRequest) {
 
         const { data, error } = await supabase
           .from("pickup_tags")
-          .insert({ name: normalizedName, approved: false, use_count: 0 })
+          .insert({ name: normalizedName, approved: false, use_count: 0, creator_id: user.id })
           .select()
           .single();
         if (error) throw error;
