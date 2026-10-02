@@ -929,3 +929,8 @@ html, body {
 .me-menu .me-group-label + .me-menu-item { border-radius: 14px 14px 0 0; }
 .me-menu-item:has(+ .me-group-label) { border-radius: 0 0 14px 14px; }
 .me-menu > .me-menu-item:last-child { border-radius: 14px; }
+
+/* 小手机浏览器加载动画 */
+@keyframes mimi-spin {
+  to { transform: rotate(360deg); }
+}

@@ -47,6 +47,7 @@ import { AdminApp } from "@/components/admin-app";
 import { InviteApp } from "@/components/invite-app";
 import UserProfileApp from "@/components/user-profile-app";
 import { AdminReviewApp } from "@/components/admin-review-app";
+import { BrowserApp } from "@/components/browser-app";
 import AppStoreApp from "@/components/app-store-app";
 import { VersionPopup } from "@/components/version-popup";
 import { ChangelogContent } from "@/components/changelog-app";
@@ -9889,17 +9890,7 @@ export default function PhonePage() {
     }
 
     function renderBrowser() {
-        return (
-            <div className="browser-page">
-                <button className="app-back-btn" style={{ position: "fixed", top: 12, left: 12, zIndex: 50 }} onClick={() => setCurrentApp(null)}>← 返回</button>
-                <div className="browser-bar"><input className="browser-url" placeholder="输入网址或搜索" /></div>
-                <div className="browser-body"><div
-                        style={{
-                            fontSize: 48,
-                            marginBottom: 12
-                        }}>🌐</div>输入网址开始浏览</div>
-            </div>
-        );
+        return <BrowserApp onClose={() => setCurrentApp(null)} />;
     }
 
     function renderMusic() {
