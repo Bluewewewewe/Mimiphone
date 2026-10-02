@@ -53,7 +53,7 @@ type PendingTag = {
     approved?: boolean;
 };
 
-type TabType = "admin" | "user" | "posts" | "reports" | "tags";
+type TabType = "admin" | "user" | "pending" | "posts" | "reports" | "tags";
 
 export function AdminReviewApp({ loginUsername, onClose }: { loginUsername: string; onClose?: () => void }) {
     const [tab, setTab] = useState<TabType>("admin");
@@ -70,6 +70,13 @@ export function AdminReviewApp({ loginUsername, onClose }: { loginUsername: stri
     const [reportsLoading, setReportsLoading] = useState(false);
     const [tags, setTags] = useState<PendingTag[]>([]);
     const [tagsLoading, setTagsLoading] = useState(false);
+    const [allTags, setAllTags] = useState<PendingTag[]>([]);
+
+    const [pendingPosts, setPendingPosts] = useState<any[]>([]);
+    const [pendingLoading, setPendingLoading] = useState(false);
+    const [mergeMode, setMergeMode] = useState(false);
+    const [mergeSelected, setMergeSelected] = useState<Set<string>>(new Set());
+    const [mergeTarget, setMergeTarget] = useState<string>("");
 
     const token = typeof window !== "undefined" ? localStorage.getItem("auth_token") || "" : "";
 
@@ -152,6 +159,81 @@ export function AdminReviewApp({ loginUsername, onClose }: { loginUsername: stri
         }
     }
 
+    async function fetchPendingPosts() {
+        setPendingLoading(true);
+        try {
+            const res = await fetch("/api/pickup?action=admin_pending_posts", {
+                headers: { Authorization: "Bearer " + token }
+            });
+            const result = await res.json();
+            if (result.success) setPendingPosts(result.posts || []);
+            else alert(result.error || "获取待审核帖子失败");
+        } catch {
+            alert("网络错误");
+        } finally {
+            setPendingLoading(false);
+        }
+    }
+
+    async function fetchAllTags() {
+        try {
+            const res = await fetch("/api/pickup?action=admin_tags_all", {
+                headers: { Authorization: "Bearer " + token }
+            });
+            const result = await res.json();
+            if (result.success) setAllTags(result.tags || []);
+        } catch { /* 静默 */ }
+    }
+
+    async function handleReviewPost(postId: string, decision: string) {
+        let reason = "";
+        if (decision === "reject") {
+            reason = window.prompt("拒绝理由（可选，将通知楼主）") || "";
+        }
+        try {
+            const res = await fetch("/api/pickup?action=admin_review_post", {
+                method: "POST",
+                headers: { Authorization: "Bearer " + token, "Content-Type": "application/json" },
+                body: JSON.stringify({ action: "admin_review_post", postId, decision, reason, token })
+            });
+            const result = await res.json();
+            if (result.success) {
+                await fetchPendingPosts();
+            } else alert(result.error || "操作失败");
+        } catch {
+            alert("网络错误");
+        }
+    }
+
+    async function handleMergeTags() {
+        const sourceIds = Array.from(mergeSelected);
+        if (!mergeTarget || sourceIds.length === 0) {
+            alert("请选择目标标签和至少一个待合并标签");
+            return;
+        }
+        if (sourceIds.includes(mergeTarget)) {
+            alert("目标标签不能同时被勾选为待合并标签");
+            return;
+        }
+        const target = allTags.find(t => t.id === mergeTarget);
+        if (!window.confirm(`确认把选中的 ${sourceIds.length} 个标签合并为「${target?.name}」？相关帖子会自动迁移，旧标签不再显示。`)) return;
+        try {
+            const res = await fetch("/api/pickup?action=admin_merge_tags", {
+                method: "POST",
+                headers: { Authorization: "Bearer " + token, "Content-Type": "application/json" },
+                body: JSON.stringify({ action: "admin_merge_tags", targetTagId: mergeTarget, sourceIds, token })
+            });
+            const result = await res.json();
+            if (result.success) {
+                setMergeMode(false); setMergeSelected(new Set()); setMergeTarget("");
+                await fetchTags(); await fetchAllTags();
+                alert("合并完成");
+            } else alert(result.error || "合并失败");
+        } catch {
+            alert("网络错误");
+        }
+    }
+
     async function handlePostAction(postId: string, postAction: string) {
         try {
             const res = await fetch("/api/pickup", {
@@ -211,9 +293,10 @@ export function AdminReviewApp({ loginUsername, onClose }: { loginUsername: stri
     }, []);
 
     useEffect(() => {
-        if (tab === "posts") fetchPosts();
+        if (tab === "pending") fetchPendingPosts();
+        else if (tab === "posts") fetchPosts();
         else if (tab === "reports") fetchReports();
-        else if (tab === "tags") fetchTags();
+        else if (tab === "tags") { fetchTags(); fetchAllTags(); }
     }, [tab]);
 
     const adminQueue = useMemo(() => users.filter(u => u.role === "admin" && u.status === "pending"), [users]);
@@ -343,6 +426,7 @@ export function AdminReviewApp({ loginUsername, onClose }: { loginUsername: stri
     const tabDefs: { key: TabType; label: string; color: string }[] = [
         { key: "admin", label: "管理员审核", color: "linear-gradient(135deg, #f59e0b, #d97706)" },
         { key: "user", label: "普通用户审核", color: "linear-gradient(135deg, #2e7d32, #5a9e6a)" },
+        { key: "pending", label: "待审楼", color: "linear-gradient(135deg, #f97316, #ea580c)" },
         { key: "posts", label: "演绎帖子", color: "linear-gradient(135deg, #2e7d32, #5a9e6a)" },
         { key: "reports", label: "举报", color: "linear-gradient(135deg, #2e7d32, #5a9e6a)" },
         { key: "tags", label: "标签审核", color: "linear-gradient(135deg, #2e7d32, #5a9e6a)" },
@@ -534,6 +618,60 @@ export function AdminReviewApp({ loginUsername, onClose }: { loginUsername: stri
                     </>
                 )}
 
+                {tab === "pending" && (
+                    <>
+                        {pendingLoading ? (
+                            <div style={{ textAlign: "center", padding: 40, color: "#c2410c", fontSize: 13 }}>加载中...</div>
+                        ) : pendingPosts.length === 0 ? (
+                            <div style={{ textAlign: "center", padding: 40, color: "#c2410c", fontSize: 13 }}>
+                                <div style={{ fontSize: 32, marginBottom: 8 }}>🎉</div>
+                                暂无待审核的楼
+                            </div>
+                        ) : (
+                            pendingPosts.map(post => (
+                                <div key={post.id} style={{
+                                    background: "rgba(255,255,255,0.85)",
+                                    borderRadius: 16, padding: 12, marginBottom: 10,
+                                    border: "1px solid #fed7aa", boxShadow: "0 2px 8px rgba(249,115,22,0.08)"
+                                }}>
+                                    <div style={{ fontSize: 14, fontWeight: 700, color: "#7c2d12", marginBottom: 4 }}>
+                                        {post.title}
+                                    </div>
+                                    <div style={{ fontSize: 11, color: "#9a3412", opacity: 0.85, marginBottom: 4 }}>
+                                        楼主：{post.owner_display || post.owner_name || "—"} · {formatTime(post.created_at)}
+                                    </div>
+                                    {post.content && (
+                                        <div style={{ fontSize: 12, color: "#555", marginBottom: 6, display: "-webkit-box", WebkitLineClamp: 3, WebkitBoxOrient: "vertical", overflow: "hidden" }}>
+                                            {post.content}
+                                        </div>
+                                    )}
+                                    {post.pickup_tags && post.pickup_tags.length > 0 && (
+                                        <div style={{ display: "flex", flexWrap: "wrap", gap: 4, marginBottom: 8 }}>
+                                            {post.pickup_tags.map((t: any) => (
+                                                <span key={t.id} style={{ fontSize: 10, background: "#fff7ed", color: "#c2410c", borderRadius: 8, padding: "2px 8px", border: "1px solid #fed7aa" }}>
+                                                    {t.name}
+                                                </span>
+                                            ))}
+                                        </div>
+                                    )}
+                                    <div style={{ display: "flex", gap: 8 }}>
+                                        <button onClick={() => handleReviewPost(post.id, "approve")} style={{
+                                            flex: 1, padding: "7px 0", borderRadius: 10, border: "none",
+                                            background: "linear-gradient(135deg, #ea580c, #f97316)",
+                                            color: "#fff", fontSize: 12, fontWeight: 700, cursor: "pointer"
+                                        }}>通过（帖子和新标签同时生效）</button>
+                                        <button onClick={() => handleReviewPost(post.id, "reject")} style={{
+                                            flex: 1, padding: "7px 0", borderRadius: 10, border: "none",
+                                            background: "rgba(239,83,80,0.1)", color: "#c62828",
+                                            fontSize: 12, fontWeight: 700, cursor: "pointer"
+                                        }}>拒绝</button>
+                                    </div>
+                                </div>
+                            ))
+                        )}
+                    </>
+                )}
+
                 {tab === "posts" && (
                     <>
                         {postsLoading ? (
@@ -702,6 +840,72 @@ export function AdminReviewApp({ loginUsername, onClose }: { loginUsername: stri
 
                 {tab === "tags" && (
                     <>
+                        {/* 标签合并工具条 */}
+                        <div style={{ marginBottom: 10 }}>
+                            {!mergeMode ? (
+                                <button onClick={() => setMergeMode(true)} style={{
+                                    width: "100%", padding: "9px 0", borderRadius: 12, border: "1px dashed #2e7d32",
+                                    background: "rgba(46,125,50,0.06)", color: "#2e7d32",
+                                    fontSize: 12, fontWeight: 700, cursor: "pointer"
+                                }}>🔀 合并意思相近的标签</button>
+                            ) : (
+                                <div style={{
+                                    background: "#f1f8e9", border: "1px solid #a5d6a7", borderRadius: 14, padding: 12
+                                }}>
+                                    <div style={{ fontSize: 12, fontWeight: 700, color: "#2e5c33", marginBottom: 8 }}>
+                                        第一步：勾选要被合并掉的标签（可多选）
+                                    </div>
+                                    <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 10 }}>
+                                        {allTags.map(t => {
+                                            const checked = mergeSelected.has(t.id);
+                                            const disabledAsTarget = t.id === mergeTarget;
+                                            return (
+                                                <button key={t.id} onClick={() => {
+                                                    if (disabledAsTarget) return;
+                                                    const next = new Set(mergeSelected);
+                                                    if (next.has(t.id)) next.delete(t.id); else next.add(t.id);
+                                                    setMergeSelected(next);
+                                                }} style={{
+                                                    fontSize: 11, padding: "5px 10px", borderRadius: 14,
+                                                    border: "1px solid " + (checked ? "#2e7d32" : "#c5e1c5"),
+                                                    background: disabledAsTarget ? "#e0e0e0" : (checked ? "#2e7d32" : "#fff"),
+                                                    color: disabledAsTarget ? "#999" : (checked ? "#fff" : "#2e5c33"),
+                                                    cursor: disabledAsTarget ? "not-allowed" : "pointer",
+                                                    opacity: t.approved ? 1 : 0.75
+                                                }}>
+                                                    {checked ? "✓ " : ""}{t.name}{!t.approved ? "（待审）" : ""}
+                                                </button>
+                                            );
+                                        })}
+                                    </div>
+                                    <div style={{ fontSize: 12, fontWeight: 700, color: "#2e5c33", marginBottom: 6 }}>
+                                        第二步：选择合并成哪个标签（保留这个）
+                                    </div>
+                                    <select value={mergeTarget} onChange={e => setMergeTarget(e.target.value)} style={{
+                                        width: "100%", padding: "8px 10px", borderRadius: 10,
+                                        border: "1px solid #a5d6a7", fontSize: 12, marginBottom: 10,
+                                        background: "#fff", color: "#2e5c33"
+                                    }}>
+                                        <option value="">— 请选择目标标签 —</option>
+                                        {allTags.filter(t => !mergeSelected.has(t.id)).map(t => (
+                                            <option key={t.id} value={t.id}>{t.name}{!t.approved ? "（待审）" : ""}</option>
+                                        ))}
+                                    </select>
+                                    <div style={{ display: "flex", gap: 8 }}>
+                                        <button onClick={handleMergeTags} style={{
+                                            flex: 1, padding: "8px 0", borderRadius: 10, border: "none",
+                                            background: "linear-gradient(135deg, #2e7d32, #5a9e6a)",
+                                            color: "#fff", fontSize: 12, fontWeight: 700, cursor: "pointer"
+                                        }}>确认合并（已选 {mergeSelected.size} 个）</button>
+                                        <button onClick={() => { setMergeMode(false); setMergeSelected(new Set()); setMergeTarget(""); }} style={{
+                                            flex: 1, padding: "8px 0", borderRadius: 10, border: "1px solid #ccc",
+                                            background: "#fff", color: "#666", fontSize: 12, fontWeight: 700, cursor: "pointer"
+                                        }}>取消</button>
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+                    
                         {tagsLoading ? (
                             <div style={{ textAlign: "center", padding: 40, color: "#4a7c50", fontSize: 13 }}>加载中...</div>
                         ) : tags.length === 0 ? (

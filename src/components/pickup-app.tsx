@@ -195,6 +195,7 @@ export function PickupApp({ onClose, loginUsername }: { onClose: () => void; log
   const [tags, setTags] = useState<Tag[]>([]);
   const [identity, setIdentity] = useState<Identity | null>(null);
   const [loading, setLoading] = useState(false);
+  const [homeNotice, setHomeNotice] = useState("");
 
   // 回复输入
   const [replyText, setReplyText] = useState("");
@@ -350,9 +351,17 @@ export function PickupApp({ onClose, loginUsername }: { onClose: () => void; log
         hostLabel: newHostLabel || me.name,
       });
       if (res.success) {
-        setView({ kind: "post", post: res.post });
         setNewTitle(""); setNewContent(""); setNewTagIds([]);
-        loadPosts(1);
+        if (res.pendingReview) {
+          // 待审：回到广场，显示提示横幅
+          setView({ kind: "home" });
+          setHomeNotice("帖子已提交，等待管理员审核。通过后将公开展示。");
+          loadPosts(1);
+        } else {
+          setView({ kind: "post", post: res.post });
+          setHomeNotice("");
+          loadPosts(1);
+        }
       } else {
         alert(res.error);
       }
@@ -573,6 +582,15 @@ export function PickupApp({ onClose, loginUsername }: { onClose: () => void; log
           </button>
           <button onClick={() => setView({ kind: "create" })} style={{ background: "#f91880", color: "#fff", border: "none", borderRadius: 18, padding: "6px 14px", fontSize: 13, fontWeight: 600, cursor: "pointer" }}>+ 开楼</button>
         </div>
+
+        {/* 全局提示横幅 */}
+        {homeNotice && (
+          <div style={{ margin: "10px 14px 0", padding: "10px 12px", background: "#fff7ed", border: "1px solid #fed7aa", borderRadius: 12, color: "#9a3412", fontSize: 12, display: "flex", alignItems: "center", gap: 8 }}>
+            <span>⏳</span>
+            <span style={{ flex: 1 }}>{homeNotice}</span>
+            <button onClick={() => setHomeNotice("")} style={{ background: "none", border: "none", color: "#9a3412", cursor: "pointer", fontSize: 14, padding: 0 }}>×</button>
+          </div>
+        )}
 
         {/* 搜索 + 排序 */}
         <div style={{ padding: "10px 16px", background: "#fff", display: "flex", gap: 8, alignItems: "center" }}>
@@ -805,7 +823,7 @@ export function PickupApp({ onClose, loginUsername }: { onClose: () => void; log
                         setCreatingTag(false);
                         if (r.success) {
                           if (r.exists) alert("该标签已存在，可直接在列表中选择");
-                          else alert("标签已提交，等待管理员在「用户审核 → 标签审核」中通过后即可使用");
+                          else alert("标签创建成功，你可以立即使用；但发布的帖子需通过管理员审核后才会公开。标签通过后其他人也能使用。");
                           setCreateTagQ("");
                           setCreateTagResults([]);
                         } else alert(r.error || "创建失败");

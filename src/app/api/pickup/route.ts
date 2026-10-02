@@ -3,6 +3,7 @@ import getSupabaseClient from "@/storage/database/supabase-client";
 import {
   requireAuth,
   requireAdmin,
+  verifyToken,
   hasPermission,
   type VerifiedUser,
   type AdminPermission,
@@ -148,14 +149,23 @@ export async function GET(request: NextRequest) {
       case "get": {
         const postId = url.searchParams.get("postId");
         if (!postId) return badRequest("缺少 postId");
-        const { data, error } = await supabase
+        const { data: found, error } = await supabase
           .from("pickup_posts")
           .select("*, pickup_tags(id, name)")
           .eq("id", postId)
-          .eq("status", "active")
           .single();
-        if (error) return NextResponse.json({ success: false, error: "帖子不存在" }, { status: 404 });
-        return NextResponse.json({ success: true, post: data });
+        if (error || !found) return NextResponse.json({ success: false, error: "帖子不存在" }, { status: 404 });
+        // pending 帖只有楼主本人能看
+        if (found.status !== "active") {
+          let viewerId: string | null = null;
+          if (getToken) {
+            try { const vu = await verifyToken(getToken); viewerId = vu?.id || null; } catch { /* */ }
+          }
+          if (viewerId !== found.owner_id) {
+            return NextResponse.json({ success: false, error: "帖子不存在" }, { status: 404 });
+          }
+        }
+        return NextResponse.json({ success: true, post: found });
       }
 
       case "replies": {
@@ -200,25 +210,43 @@ export async function GET(request: NextRequest) {
       }
 
       case "tags": {
+        // 已登录用户：可见「已审核标签」+「自己创建的未审核标签」；被合并的不返回
+        let currentUserId: string | null = null;
+        if (getToken) {
+          try {
+            const meUser = await verifyToken(getToken);
+            if (meUser) currentUserId = meUser.id;
+          } catch { /* ignore */ }
+        }
         const query = url.searchParams.get("q");
+
         if (query) {
           const { data, error } = await supabase
             .from("pickup_tags")
             .select("*")
             .ilike("name", `%${query}%`)
+            .is("merged_into", null)
             .order("use_count", { ascending: false })
-            .limit(20);
+            .limit(30);
           if (error) throw error;
-          return NextResponse.json({ success: true, tags: data || [] });
+          const visible = (data || []).filter((t: any) =>
+            t.approved || (currentUserId && t.creator_id === currentUserId)
+          );
+          return NextResponse.json({ success: true, tags: visible });
         }
+
         const { data, error } = await supabase
           .from("pickup_tags")
           .select("*")
-          .eq("approved", true)
+          .is("merged_into", null)
+          .order("approved", { ascending: false })
           .order("use_count", { ascending: false })
-          .limit(10);
+          .limit(50);
         if (error) throw error;
-        return NextResponse.json({ success: true, tags: data || [] });
+        const visibleAll = (data || []).filter((t: any) =>
+          t.approved || (currentUserId && t.creator_id === currentUserId)
+        );
+        return NextResponse.json({ success: true, tags: visibleAll });
       }
 
       case "identity": {
@@ -259,18 +287,46 @@ export async function GET(request: NextRequest) {
         const pageSize = Math.min(50, parseInt(url.searchParams.get("pageSize") || "20", 10));
         const from = (page - 1) * pageSize;
 
-        const { data, error, count } = await supabase
+        // 判断查看者是否为楼主本人
+        let viewerIsOwner = false;
+        if (getToken) {
+          try {
+            const vu = await verifyToken(getToken);
+            if (vu && vu.id === ownerId) viewerIsOwner = true;
+          } catch { /* */ }
+        }
+
+        let mpq = supabase
           .from("pickup_posts")
           .select("*", { count: "exact" })
-          .eq("owner_id", ownerId)
-          .eq("status", "active")
-          .order("created_at", { ascending: false })
-          .range(from, from + pageSize - 1);
+          .eq("owner_id", ownerId);
+        if (viewerIsOwner) {
+          mpq = mpq.in("status", ["active", "pending"]);
+        } else {
+          mpq = mpq.eq("status", "active");
+        }
+        mpq = mpq.order("created_at", { ascending: false }).range(from, from + pageSize - 1);
+        const { data, error, count } = await mpq;
         if (error) throw error;
+        // 映射为前端 PickupPost 结构
+        const mapped = (data || []).map((row: any) => ({
+          ...row,
+          id: row.id,
+          title: row.title,
+          content: row.content,
+          author_id: row.owner_id,
+          author_username: row.owner_username,
+          tags: row.tag_ids || [],
+          is_pinned: !!row.is_pinned,
+          is_locked: !!row.is_locked,
+          likes_count: row.likes_count || 0,
+          replies_count: row.replies_count || 0,
+          views_count: row.views_count || 0,
+        }));
         return NextResponse.json({
           success: true,
-          data: data || [],
-          posts: data || [],
+          data: mapped,
+          posts: mapped,
           total: count || 0,
           page,
           pageSize,
@@ -297,9 +353,37 @@ export async function GET(request: NextRequest) {
           .from("pickup_tags")
           .select("*")
           .eq("approved", false)
+          .is("merged_into", null)
           .order("created_at", { ascending: false });
         if (error) throw error;
         return NextResponse.json({ success: true, tags: data || [] });
+      }
+
+      case "admin_tags_all": {
+        await requirePickupAdmin({ token: getToken });
+        const { data, error } = await supabase
+          .from("pickup_tags")
+          .select("*")
+          .is("merged_into", null)
+          .order("approved", { ascending: true })
+          .order("created_at", { ascending: false });
+        if (error) throw error;
+        return NextResponse.json({ success: true, tags: data || [] });
+      }
+
+      case "admin_pending_posts": {
+        await requirePickupAdmin({ token: getToken });
+        const page = Math.max(1, parseInt(url.searchParams.get("page") || "1", 10));
+        const pageSize = Math.min(50, parseInt(url.searchParams.get("pageSize") || "20", 10));
+        const from = (page - 1) * pageSize;
+        const { data, error, count } = await supabase
+          .from("pickup_posts")
+          .select("*, pickup_tags(id, name)", { count: "exact" })
+          .eq("status", "pending")
+          .order("created_at", { ascending: true })
+          .range(from, from + pageSize - 1);
+        if (error) throw error;
+        return NextResponse.json({ success: true, posts: data || [], total: count || 0, page });
       }
 
       default:
@@ -345,21 +429,35 @@ export async function POST(request: NextRequest) {
         if (!title || title.length > TITLE_MAX) return badRequest(`标题 1~${TITLE_MAX} 字`);
         if (!content || content.length > CONTENT_MAX) return badRequest(`内容不超过 ${CONTENT_MAX} 字`);
 
+        // 校验标签：允许 ①已审核标签 ②本人创建的未审核/未合并标签
         if (tagIds.length > 0) {
-          const { data: tags } = await supabase
+          const { data: foundTags } = await supabase
             .from("pickup_tags")
-            .select("id")
-            .in("id", tagIds)
-            .eq("approved", true);
-          const validIds = (tags || []).map((t: any) => t.id);
-          if (validIds.length !== tagIds.length) {
-            return badRequest("包含未审核通过的标签");
+            .select("id, approved, creator_id, merged_into")
+            .in("id", tagIds);
+          const list = foundTags || [];
+          if (list.length !== tagIds.length) return badRequest("包含不存在的标签");
+          for (const t of list) {
+            if (t.merged_into) return badRequest("包含已被合并的标签，请改选新标签");
+            if (!t.approved && t.creator_id !== user.id) {
+              return badRequest("包含他人创建、尚未审核通过的标签");
+            }
           }
         }
 
         // 从 users 表取 display_name
         const userMap = await buildUserInfoMap(supabase, [user.id]);
         const userInfo = userMap.get(user.id) || { name: user.username, avatar: "", username: user.username };
+
+        // 是否需要审核：只要带了未审核标签，帖子进 pending
+        let needReview = false;
+        if (tagIds.length > 0) {
+          const { data: checkTags } = await supabase
+            .from("pickup_tags")
+            .select("approved")
+            .in("id", tagIds);
+          needReview = (checkTags || []).some((t: any) => !t.approved);
+        }
 
         const { data, error } = await supabase
           .from("pickup_posts")
@@ -373,17 +471,25 @@ export async function POST(request: NextRequest) {
             tag_ids: tagIds,
             identity_required: identityRequired,
             host_label: hostLabel || userInfo.name,
+            status: needReview ? "pending" : "active",
           })
           .select()
           .single();
 
         if (error) throw error;
-        if (tagIds.length > 0) {
+
+        // 已审核标签使用数 +1；未审核标签不加（审核通过时再加，避免虚假计数）
+        if (!needReview && tagIds.length > 0) {
           for (const id of tagIds) {
-            await supabase.rpc("pickup_tag_inc", { tag_id: id });
+            try { await supabase.rpc("pickup_tag_inc", { tag_id: id }); } catch { /* rpc 可能未定义 */ }
           }
         }
-        return NextResponse.json({ success: true, post: data });
+
+        return NextResponse.json({
+          success: true,
+          post: data,
+          pendingReview: needReview,
+        });
       }
 
       case "create_reply": {
@@ -745,6 +851,109 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ success: true });
       }
 
+      case "admin_review_post": {
+        // 审核待发布的帖子：approve(通过) / reject(拒绝)
+        await requirePickupAdmin(body);
+        const postId = body.postId;
+        const decision = body.decision;
+        const reason = (body.reason || "").toString().trim().slice(0, 200);
+        if (!postId || !["approve", "reject"].includes(decision)) return badRequest("缺少参数");
+
+        const { data: targetPost } = await supabase
+          .from("pickup_posts").select("*").eq("id", postId).single();
+        if (!targetPost) return NextResponse.json({ success: false, error: "帖子不存在" }, { status: 404 });
+        if (targetPost.status !== "pending") return badRequest("该帖子不在待审状态");
+
+        if (decision === "approve") {
+          // 帖子公开；同时通过其携带的所有未审核标签，并累加标签使用数
+          await supabase.from("pickup_posts").update({ status: "active", updated_at: new Date().toISOString() }).eq("id", postId);
+
+          const tagIds: string[] = targetPost.tag_ids || [];
+          if (tagIds.length > 0) {
+            const { data: tList } = await supabase
+              .from("pickup_tags").select("id, approved").in("id", tagIds);
+            for (const t of (tList || [])) {
+              if (!t.approved) {
+                await supabase.from("pickup_tags").update({ approved: true }).eq("id", t.id);
+              }
+              try { await supabase.rpc("pickup_tag_inc", { tag_id: t.id }); } catch { /* */ }
+            }
+          }
+        } else {
+          // 拒绝：帖子删除；帖子携带的未审核标签保持 pending（不影响创建者之后再次使用）
+          await supabase.from("pickup_posts").update({ status: "deleted" }).eq("id", postId);
+        }
+
+        insertNotification({
+          userId: targetPost.owner_id,
+          type: "admin_action",
+          title: decision === "approve"
+            ? `你的帖子「${targetPost.title}」已通过审核`
+            : `你的帖子「${targetPost.title}」未通过审核`,
+          content: reason,
+          relatedPostId: postId,
+        });
+
+        return NextResponse.json({ success: true });
+      }
+
+      case "admin_merge_tags": {
+        // 合并近义标签：sourceIds 的帖子全部迁到 targetTag，source 标签标记 merged_into
+        await requirePickupAdmin(body);
+        const targetTagId = body.targetTagId;
+        const sourceIds: string[] = body.sourceIds || [];
+        if (!targetTagId || !Array.isArray(sourceIds) || sourceIds.length === 0) {
+          return badRequest("缺少目标标签或待合并标签");
+        }
+        if (sourceIds.includes(targetTagId)) return badRequest("目标标签不能同时是待合并标签");
+
+        const { data: target } = await supabase
+          .from("pickup_tags").select("*").eq("id", targetTagId).single();
+        if (!target || target.merged_into) return badRequest("目标标签不存在或已失效");
+
+        // 确保目标标签已通过审核（合并后的语义标签应公开可用）
+        if (!target.approved) {
+          await supabase.from("pickup_tags").update({ approved: true }).eq("id", targetTagId);
+        }
+
+        const notifyUserIds = new Set<string>();
+
+        for (const sourceId of sourceIds) {
+          const { data: source } = await supabase
+            .from("pickup_tags").select("*").eq("id", sourceId).single();
+          if (!source || source.merged_into) continue;
+
+          // 迁移所有引用了 source 标签的帖子
+          const { data: affected } = await supabase
+            .from("pickup_posts")
+            .select("id, owner_id, tag_ids")
+            .contains("tag_ids", [sourceId]);
+
+          for (const post of (affected || [])) {
+            const newTagIds: string[] = (post.tag_ids || [])
+              .filter((id: string) => id !== sourceId);
+            if (!newTagIds.includes(targetTagId)) newTagIds.push(targetTagId);
+            await supabase.from("pickup_posts").update({ tag_ids: newTagIds }).eq("id", post.id);
+            notifyUserIds.add(post.owner_id);
+          }
+
+          // source 标签作废
+          await supabase.from("pickup_tags").update({ merged_into: targetTagId }).eq("id", sourceId);
+        }
+
+        // 通知所有受影响的楼主
+        for (const uid of notifyUserIds) {
+          insertNotification({
+            userId: uid,
+            type: "admin_action",
+            title: `你使用的标签已合并为「${target.name}」`,
+            content: "意思相近的标签已由管理员统一整理，帖子标签已自动更新。",
+          });
+        }
+
+        return NextResponse.json({ success: true });
+      }
+
       default:
         return badRequest(`未知 action: ${action}`);
     }
@@ -780,6 +989,109 @@ export async function DELETE(request: NextRequest) {
         await supabase.from("pickup_posts").update({ status: "deleted" }).eq("id", postId);
         return NextResponse.json({ success: true });
       }
+      case "admin_review_post": {
+        // 审核待发布的帖子：approve(通过) / reject(拒绝)
+        await requirePickupAdmin(body);
+        const postId = body.postId;
+        const decision = body.decision;
+        const reason = (body.reason || "").toString().trim().slice(0, 200);
+        if (!postId || !["approve", "reject"].includes(decision)) return badRequest("缺少参数");
+
+        const { data: targetPost } = await supabase
+          .from("pickup_posts").select("*").eq("id", postId).single();
+        if (!targetPost) return NextResponse.json({ success: false, error: "帖子不存在" }, { status: 404 });
+        if (targetPost.status !== "pending") return badRequest("该帖子不在待审状态");
+
+        if (decision === "approve") {
+          // 帖子公开；同时通过其携带的所有未审核标签，并累加标签使用数
+          await supabase.from("pickup_posts").update({ status: "active", updated_at: new Date().toISOString() }).eq("id", postId);
+
+          const tagIds: string[] = targetPost.tag_ids || [];
+          if (tagIds.length > 0) {
+            const { data: tList } = await supabase
+              .from("pickup_tags").select("id, approved").in("id", tagIds);
+            for (const t of (tList || [])) {
+              if (!t.approved) {
+                await supabase.from("pickup_tags").update({ approved: true }).eq("id", t.id);
+              }
+              try { await supabase.rpc("pickup_tag_inc", { tag_id: t.id }); } catch { /* */ }
+            }
+          }
+        } else {
+          // 拒绝：帖子删除；帖子携带的未审核标签保持 pending（不影响创建者之后再次使用）
+          await supabase.from("pickup_posts").update({ status: "deleted" }).eq("id", postId);
+        }
+
+        insertNotification({
+          userId: targetPost.owner_id,
+          type: "admin_action",
+          title: decision === "approve"
+            ? `你的帖子「${targetPost.title}」已通过审核`
+            : `你的帖子「${targetPost.title}」未通过审核`,
+          content: reason,
+          relatedPostId: postId,
+        });
+
+        return NextResponse.json({ success: true });
+      }
+
+      case "admin_merge_tags": {
+        // 合并近义标签：sourceIds 的帖子全部迁到 targetTag，source 标签标记 merged_into
+        await requirePickupAdmin(body);
+        const targetTagId = body.targetTagId;
+        const sourceIds: string[] = body.sourceIds || [];
+        if (!targetTagId || !Array.isArray(sourceIds) || sourceIds.length === 0) {
+          return badRequest("缺少目标标签或待合并标签");
+        }
+        if (sourceIds.includes(targetTagId)) return badRequest("目标标签不能同时是待合并标签");
+
+        const { data: target } = await supabase
+          .from("pickup_tags").select("*").eq("id", targetTagId).single();
+        if (!target || target.merged_into) return badRequest("目标标签不存在或已失效");
+
+        // 确保目标标签已通过审核（合并后的语义标签应公开可用）
+        if (!target.approved) {
+          await supabase.from("pickup_tags").update({ approved: true }).eq("id", targetTagId);
+        }
+
+        const notifyUserIds = new Set<string>();
+
+        for (const sourceId of sourceIds) {
+          const { data: source } = await supabase
+            .from("pickup_tags").select("*").eq("id", sourceId).single();
+          if (!source || source.merged_into) continue;
+
+          // 迁移所有引用了 source 标签的帖子
+          const { data: affected } = await supabase
+            .from("pickup_posts")
+            .select("id, owner_id, tag_ids")
+            .contains("tag_ids", [sourceId]);
+
+          for (const post of (affected || [])) {
+            const newTagIds: string[] = (post.tag_ids || [])
+              .filter((id: string) => id !== sourceId);
+            if (!newTagIds.includes(targetTagId)) newTagIds.push(targetTagId);
+            await supabase.from("pickup_posts").update({ tag_ids: newTagIds }).eq("id", post.id);
+            notifyUserIds.add(post.owner_id);
+          }
+
+          // source 标签作废
+          await supabase.from("pickup_tags").update({ merged_into: targetTagId }).eq("id", sourceId);
+        }
+
+        // 通知所有受影响的楼主
+        for (const uid of notifyUserIds) {
+          insertNotification({
+            userId: uid,
+            type: "admin_action",
+            title: `你使用的标签已合并为「${target.name}」`,
+            content: "意思相近的标签已由管理员统一整理，帖子标签已自动更新。",
+          });
+        }
+
+        return NextResponse.json({ success: true });
+      }
+
       default:
         return badRequest(`未知 action: ${action}`);
     }

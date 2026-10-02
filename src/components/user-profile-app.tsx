@@ -27,6 +27,7 @@ interface PickupPost {
   views_count: number;
   is_pinned: boolean;
   is_locked: boolean;
+  status?: string;
   created_at: string;
   updated_at: string;
 }
@@ -695,6 +696,11 @@ export default function UserProfileApp({
                     <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 6, flexWrap: "wrap" }}>
                       {post.is_pinned && <span style={{ fontSize: 12 }}>📌</span>}
                       {post.is_locked && <span style={{ fontSize: 12 }}>🔒</span>}
+                      {post.status === "pending" && (
+                        <span style={{ fontSize: 10, padding: "2px 8px", borderRadius: 8, background: "#fff7ed", color: "#c2410c", border: "1px solid #fed7aa", fontWeight: 600 }}>
+                          ⏳ 审核中
+                        </span>
+                      )}
                       {post.tags && post.tags.length > 0 && (
                         <span style={{ fontSize: 11, padding: "2px 8px", borderRadius: 10, background: "#fff7ed", color: "#ea580c", fontWeight: 500 }}>
                           {post.tags.join(", ")}
