@@ -110,6 +110,7 @@ export default function UserProfileApp({
   const [pickupPage, setPickupPage] = useState(1);
   const [pickupLoading, setPickupLoading] = useState(false);
   const [pickupTotal, setPickupTotal] = useState(0);
+  const [pickupError, setPickupError] = useState("");
   const [avatarUploading, setAvatarUploading] = useState(false);
 
   // 关注相关
@@ -178,6 +179,7 @@ export default function UserProfileApp({
     } else if (tab === "pickup") {
       setPickupLoading(true);
       setPickupPage(1);
+      setPickupError("");
       try {
         const token = localStorage.getItem("auth_token") || "";
         const viewer = isSelf ? profile.username : "";
@@ -196,7 +198,11 @@ export default function UserProfileApp({
           setPickupPosts(json.data || []);
           setPickupTotal(json.total || 0);
         } else {
-          alert(json.error || "加载演绎帖子失败");
+          const msg = json.error || "";
+          // 登录过期类错误不弹 alert 打断用户
+          if (!msg.includes("未登录") && !msg.includes("登录已过期")) {
+            setPickupError(msg || "加载演绎帖子失败");
+          }
         }
       } catch {
         alert("加载演绎帖子失败");
@@ -229,7 +235,10 @@ export default function UserProfileApp({
         setPickupPage(nextPage);
         setPickupTotal(json.total || 0);
       } else {
-        alert(json.error || "加载失败");
+        const msg = json.error || "";
+        if (!msg.includes("未登录") && !msg.includes("登录已过期")) {
+          setPickupError(msg || "加载失败");
+        }
       }
     } catch {
       alert("加载失败");
@@ -659,6 +668,10 @@ export default function UserProfileApp({
           {activeTab === "pickup" ? (
             pickupLoading && pickupPosts.length === 0 ? (
               <div style={{ textAlign: "center", fontSize: 13, color: "#9ca3af", padding: "30px 0" }}>加载中...</div>
+            ) : pickupError ? (
+              <div style={{ padding: "12px", background: "#fef2f2", borderRadius: 12, color: "#dc2626", fontSize: 12, marginBottom: 10 }}>
+                {pickupError}
+              </div>
             ) : pickupPosts.length === 0 ? (
               <div style={{ textAlign: "center", fontSize: 13, color: "#9ca3af", padding: "30px 0", background: "#fff", borderRadius: 12 }}>
                 <div style={{ fontSize: 36, marginBottom: 8 }}>🎭</div>

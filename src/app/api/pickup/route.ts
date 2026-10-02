@@ -107,28 +107,36 @@ export async function GET(request: NextRequest) {
   const action = url.searchParams.get("action") || "list";
   const supabase = await getSupabaseClient();
 
+  // 同时支持 Authorization header 和 query token
+  const headerToken = request.headers.get("authorization")?.startsWith("Bearer ")
+    ? request.headers.get("authorization")!.slice(7)
+    : null;
+  const queryToken = url.searchParams.get("token");
+  const getToken = headerToken || queryToken;
+
   try {
     switch (action) {
       case "list": {
         const page = Math.max(1, parseInt(url.searchParams.get("page") || "1", 10));
-        const sort = url.searchParams.get("sort") || "heat";
+        const sort = url.searchParams.get("sort") || "newest";
         const tagId = url.searchParams.get("tag");
         const keyword = url.searchParams.get("keyword");
         const from = (page - 1) * PER_PAGE;
 
         let q = supabase
           .from("pickup_posts")
-          .select("*, pickup_tags(id, name)")
+          .select("*, pickup_tags(id, name)", { count: "exact" })
           .eq("status", "active");
 
         if (tagId) q = q.contains("tag_ids", [tagId]);
         if (keyword) q = q.ilike("title", `%${keyword}%`);
 
         if (sort === "heat") {
+          // 热度 = 回复数*2 + 点赞数，再用 created_at 兜底
           q = q.order("replies_count", { ascending: false });
-        } else {
-          q = q.order("created_at", { ascending: false });
+          q = q.order("likes_count", { ascending: false });
         }
+        q = q.order("created_at", { ascending: false });
 
         const { data, error, count } = await q
           .range(from, from + PER_PAGE - 1);
@@ -216,7 +224,7 @@ export async function GET(request: NextRequest) {
       case "identity": {
         const postId = url.searchParams.get("postId");
         if (!postId) return badRequest("缺少 postId");
-        const user = await requirePickupAuth({ token: url.searchParams.get("token") });
+        const user = await requirePickupAuth({ token: getToken });
         const { data, error } = await supabase
           .from("pickup_identities")
           .select("*")
@@ -231,19 +239,46 @@ export async function GET(request: NextRequest) {
       }
 
       case "my_posts": {
-        const user = await requirePickupAuth({ token: url.searchParams.get("token") });
-        const { data, error } = await supabase
+        // 查用户帖子是公开操作，不强制登录
+        // 只有没传 username 时才回退到"查自己"（此时需要 token）
+        const targetUsername = url.searchParams.get("username");
+        let ownerId: string | null = null;
+        if (targetUsername) {
+          const { data: targetUser } = await supabase
+            .from("users")
+            .select("id")
+            .eq("username", targetUsername)
+            .single();
+          if (!targetUser) return badRequest("用户不存在");
+          ownerId = targetUser.id;
+        } else {
+          const reqUser = await requirePickupAuth({ token: getToken });
+          ownerId = reqUser.id;
+        }
+        const page = Math.max(1, parseInt(url.searchParams.get("page") || "1", 10));
+        const pageSize = Math.min(50, parseInt(url.searchParams.get("pageSize") || "20", 10));
+        const from = (page - 1) * pageSize;
+
+        const { data, error, count } = await supabase
           .from("pickup_posts")
-          .select("*")
-          .eq("owner_id", user.id)
+          .select("*", { count: "exact" })
+          .eq("owner_id", ownerId)
           .eq("status", "active")
-          .order("created_at", { ascending: false });
+          .order("created_at", { ascending: false })
+          .range(from, from + pageSize - 1);
         if (error) throw error;
-        return NextResponse.json({ success: true, posts: data || [] });
+        return NextResponse.json({
+          success: true,
+          data: data || [],
+          posts: data || [],
+          total: count || 0,
+          page,
+          pageSize,
+        });
       }
 
       case "admin_reports": {
-        await requirePickupAdmin({ token: url.searchParams.get("token") });
+        await requirePickupAdmin({ token: getToken });
         const status = url.searchParams.get("status") || "pending";
         const target = url.searchParams.get("target");
         const { data, error } = await supabase
@@ -257,7 +292,7 @@ export async function GET(request: NextRequest) {
       }
 
       case "admin_tags_pending": {
-        await requirePickupAdmin({ token: url.searchParams.get("token") });
+        await requirePickupAdmin({ token: getToken });
         const { data, error } = await supabase
           .from("pickup_tags")
           .select("*")
