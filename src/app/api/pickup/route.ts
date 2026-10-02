@@ -69,6 +69,36 @@ async function buildUserInfoMap(
   return map;
 }
 
+
+// ============================================================
+// 通知埋点（表不存在时静默失败）
+// ============================================================
+async function insertNotification(params: {
+  userId: string;
+  type: string;
+  title: string;
+  content?: string;
+  relatedPostId?: string;
+  relatedReplyId?: string;
+  extra?: any;
+}) {
+  try {
+    const supabase = await getSupabaseClient();
+    await supabase.from("notifications").insert({
+      user_id: params.userId,
+      type: params.type,
+      title: params.title,
+      content: params.content || "",
+      related_post_id: params.relatedPostId || null,
+      related_reply_id: params.relatedReplyId || null,
+      extra: params.extra || {},
+    });
+  } catch (e) {
+    console.error("[pickup] insertNotification failed", e);
+    // 不抛错，避免影响主流程
+  }
+}
+
 // ============================================================
 // GET
 // ============================================================
@@ -393,6 +423,17 @@ export async function POST(request: NextRequest) {
         if (error) throw error;
 
         await supabase.rpc("pickup_post_inc_replies", { post_id: postId });
+
+        // 通知帖子楼主（不通知自己）
+        if (post.owner_id !== user.id) {
+          insertNotification({
+            userId: post.owner_id,
+            type: "reply",
+            title: `有人回复了你的帖子「${post.title}」`,
+            relatedPostId: post.id,
+          });
+        }
+
         return NextResponse.json({ success: true, reply: data, floor_no: floorNo });
       }
 
@@ -471,6 +512,21 @@ export async function POST(request: NextRequest) {
           await supabase.from("pickup_replies").update({ has_host_reply: true })
             .eq("id", replyId);
         }
+
+        // 通知父回复作者（不通知自己）
+        const { data: parentReply } = await supabase
+          .from("pickup_replies").select("author_id").eq("id", replyId).single();
+        if (parentReply && parentReply.author_id !== user.id) {
+          insertNotification({
+            userId: parentReply.author_id,
+            type: "reply",
+            title: `有人回复了你在「${post.title}」的评论`,
+            relatedPostId: postId,
+            relatedReplyId: replyId,
+          });
+        }
+        // TODO: @提及通知（解析 content 中的 @xxx 并查找对应用户）
+
         return NextResponse.json({ success: true, subReply: data });
       }
 
@@ -589,6 +645,17 @@ export async function POST(request: NextRequest) {
             handled_at: new Date().toISOString(),
           }).eq("id", reportId);
         }
+
+        // 通知举报人
+        const reportResult = handleAction === "approve" ? "deleted" : "dismissed";
+        insertNotification({
+          userId: report.reporter_id,
+          type: "report_result",
+          title: "你的举报已处理",
+          content: reportResult === "deleted" ? "举报内容已被处理" : "举报已驳回",
+          extra: { result: reportResult },
+        });
+
         return NextResponse.json({ success: true });
       }
 
@@ -597,7 +664,22 @@ export async function POST(request: NextRequest) {
         const tagId = body.tagId;
         const approved = body.approved !== false;
         if (!tagId) return badRequest("缺少 tagId");
+
+        // 查询标签信息用于通知
+        const { data: tagInfo } = await supabase
+          .from("pickup_tags").select("name, creator_id").eq("id", tagId).single();
+
         await supabase.from("pickup_tags").update({ approved }).eq("id", tagId);
+
+        // 通知标签创建者
+        if (tagInfo?.creator_id) {
+          insertNotification({
+            userId: tagInfo.creator_id,
+            type: "admin_action",
+            title: `你创建的标签「${tagInfo.name}」已${approved ? "通过" : "拒绝"}`,
+          });
+        }
+
         return NextResponse.json({ success: true });
       }
 
@@ -606,8 +688,25 @@ export async function POST(request: NextRequest) {
         const postId = body.postId;
         const postAction = body.postAction;
         if (!postId || !postAction) return badRequest("缺少参数");
+
+        // 查询帖子信息用于通知
+        const { data: actionPost } = await supabase
+          .from("pickup_posts").select("owner_id, title").eq("id", postId).single();
+
         const status = postAction === "delete" ? "deleted" : postAction === "hide" ? "hidden" : "active";
         await supabase.from("pickup_posts").update({ status }).eq("id", postId);
+
+        // 通知帖子楼主（pin/unpin 不通知）
+        const actionLabels: Record<string, string> = { delete: "删除", hide: "隐藏", unhide: "取消隐藏" };
+        if (!["pin", "unpin"].includes(postAction) && actionPost?.owner_id) {
+          insertNotification({
+            userId: actionPost.owner_id,
+            type: "admin_action",
+            title: `你的帖子「${actionPost.title}」已被${actionLabels[postAction] || postAction}`,
+            relatedPostId: postId,
+          });
+        }
+
         return NextResponse.json({ success: true });
       }
 
