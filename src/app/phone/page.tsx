@@ -9031,7 +9031,14 @@ export default function PhonePage() {
                             color: "#92400e",
                             marginBottom: 16
                         }}>⚙️ 设置</div>
-                    <div className="me-menu-item" onClick={async () => {
+                    <div className="me-menu-item" onClick={() => {
+                        setCurrentApp("user-profile");
+                    }}>
+                        <span className="me-menu-icon">👤</span>
+                        <span className="me-menu-label">查看我的主页</span>
+                        <span className="me-menu-arrow">›</span>
+                    </div>
+                                        <div className="me-menu-item" onClick={async () => {
                         setProfileName(loginUsername);
                         setProfileMsg("");
                         setProfileAvatar("");
