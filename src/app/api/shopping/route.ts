@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import {
   INITIAL_PRODUCTS, INITIAL_MEMBERS, INITIAL_ORDERS,
   addProduct, removeProduct, updateProductPrice, addStock, updateProductStock,
-  addToCart, removeFromCart, clearCart, getCartTotal,
+  addToCart, removeFromCart,  getCartTotal,
   triggerCPAutoShop, getRandomOnlineMembers, generateBrowseComments,
   getHotProducts, getProductsByCategory, getRandomBrowse,
   type ProductCategory, type CartItem, type ShopProduct, type ShopOrder, type ShopMember, type BrowseComment,
@@ -65,8 +65,7 @@ export async function GET(req: NextRequest) {
         const totalProducts = products.filter(p => p.isActive).length;
         const totalOrders = orders.length;
         const todayOrders = orders.filter(o => {
-          const d = new Date();
-          return o.timestamp.includes('今天') || o.timestamp.includes('分钟前') || o.timestamp.includes('小时前');
+                    return o.timestamp.includes('今天') || o.timestamp.includes('分钟前') || o.timestamp.includes('小时前');
         }).length;
         const totalRevenue = orders.reduce((sum, o) => sum + o.price * o.quantity, 0);
         return NextResponse.json({ success: true, data: { totalProducts, totalOrders, todayOrders, totalRevenue } });
@@ -183,7 +182,7 @@ export async function POST(req: NextRequest) {
 
       // 直接购买
       case 'buy': {
-        const { productId, userId = 'user', memberId = 'user', recipientName, quantity = 1 } = data;
+        const { productId,  memberId = 'user', recipientName, quantity = 1 } = data;
         const product = products.find(p => p.id === productId && p.isActive);
         if (!product) return NextResponse.json({ success: false, error: '商品不存在' }, { status: 404 });
         if (product.stock < quantity) return NextResponse.json({ success: false, error: '库存不足' }, { status: 400 });

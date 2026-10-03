@@ -73,8 +73,8 @@ export function AdminReviewApp({ loginUsername, onClose }: { loginUsername: stri
     const [tagsLoading, setTagsLoading] = useState(false);
     const [allTags, setAllTags] = useState<PendingTag[]>([]);
 
-    const [pendingPosts, setPendingPosts] = useState<any[]>([]);
-    const [pendingLoading, setPendingLoading] = useState(false);
+    const [, setPendingPosts] = useState<any[]>([]);
+    const [, setPendingLoading] = useState(false);
     const [mergeMode, setMergeMode] = useState(false);
     const [mergeSelected, setMergeSelected] = useState<Set<string>>(new Set());
     const [mergeTarget, setMergeTarget] = useState<string>("");
@@ -184,26 +184,6 @@ export function AdminReviewApp({ loginUsername, onClose }: { loginUsername: stri
             const result = await res.json();
             if (result.success) setAllTags(result.tags || []);
         } catch { /* 静默 */ }
-    }
-
-    async function handleReviewPost(postId: string, decision: string) {
-        let reason = "";
-        if (decision === "reject") {
-            reason = window.prompt("拒绝理由（可选，将通知楼主）") || "";
-        }
-        try {
-            const res = await fetch("/api/pickup?action=admin_review_post", {
-                method: "POST",
-                headers: { Authorization: "Bearer " + token, "Content-Type": "application/json" },
-                body: JSON.stringify({ action: "admin_review_post", postId, decision, reason, token })
-            });
-            const result = await res.json();
-            if (result.success) {
-                await fetchPendingPosts();
-            } else alert(result.error || "操作失败");
-        } catch {
-            alert("网络错误");
-        }
     }
 
     async function handleMergeTags() {
@@ -856,7 +836,7 @@ export function AdminReviewApp({ loginUsername, onClose }: { loginUsername: stri
                                 </div>
                             )}
                         </div>
-                    
+
                         {tagsLoading ? (
                             <div style={{ textAlign: "center", padding: 40, color: "#4a7c50", fontSize: 13 }}>加载中...</div>
                         ) : tags.length === 0 ? (

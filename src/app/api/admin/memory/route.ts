@@ -19,8 +19,7 @@ export const runtime = 'nodejs';
 
 export async function GET(request: NextRequest) {
   try {
-    const authUser = await requireAdminRequest(request);
-    const { searchParams } = new URL(request.url);
+        const { searchParams } = new URL(request.url);
     const status = searchParams.get('status') as 'pending' | 'approved' | 'rejected' | null;
     const includeDuplicates = searchParams.get('duplicates') !== 'false';
 

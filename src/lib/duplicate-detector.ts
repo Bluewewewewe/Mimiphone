@@ -1,6 +1,6 @@
 /**
  * 多用户重复内容检测模块
- * 
+ *
  * 核心机制：
  * 1. 对每条记忆内容生成指纹（character bigram hash）
  * 2. 查询 promotion_candidates 表中其他用户的相似内容
@@ -66,7 +66,7 @@ export function computeContentFingerprint(text: string): string {
 
 // ========== 相似度阈值 ==========
 const SIMILARITY_THRESHOLD = 0.35;   // Jaccard ≥ 0.35 视为相似
-const HIGH_SIMILARITY_THRESHOLD = 0.6; // Jaccard ≥ 0.6 视为高度相似
+ // Jaccard ≥ 0.6 视为高度相似
 const MIN_DIFFERENT_USERS_FOR_BOOST = 2; // 至少 2 个不同用户提及才触发增强
 
 // ========== 跨用户重复检测 ==========
@@ -105,8 +105,7 @@ export async function detectCrossUserDuplicates(
   excludeCandidateId?: string
 ): Promise<DuplicateDetectionResult> {
   try {
-    const fingerprint = computeContentFingerprint(content);
-    const bigrams = extractBigrams(content);
+        const bigrams = extractBigrams(content);
 
     // 查询所有 pending + approved 的候选（排除当前用户）
     let query = getClient()
@@ -165,8 +164,7 @@ export async function detectCrossUserDuplicates(
     // 1. 有跨用户重复
     // 2. 至少 2 个不同用户提及
     // 3. 至少有 1 条高度相似匹配
-    const hasHighSimilarity = matches.some(m => m.similarity >= HIGH_SIMILARITY_THRESHOLD);
-    const shouldAutoPromote = hasDuplicates && uniqueUserCount >= MIN_DIFFERENT_USERS_FOR_BOOST;
+        const shouldAutoPromote = hasDuplicates && uniqueUserCount >= MIN_DIFFERENT_USERS_FOR_BOOST;
 
     let boostReason: string | null = null;
     if (shouldAutoPromote) {

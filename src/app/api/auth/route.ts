@@ -283,7 +283,6 @@ export async function POST(request: NextRequest) {
       invitationCode,
       weiboName,
       weiboLink,
-      reason,
       authToken,
       currentPassword,
       newPassword,

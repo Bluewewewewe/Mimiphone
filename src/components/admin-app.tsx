@@ -1,5 +1,5 @@
 'use client';
-import { useState, useCallback } from 'react';
+import { useState, } from 'react';
 
 // ============ 类型定义 ============
 type AdminRole = 'super_admin' | 'review_admin' | 'ops_admin';
@@ -231,7 +231,7 @@ interface AdminAppProps {
 
 export function AdminApp({ onClose, adminRole }: AdminAppProps) {
   const [activeModule, setActiveModule] = useState<string>('dashboard');
-  const [selectedUser, setSelectedUser] = useState<AdminUser | null>(null);
+  const [, ] = useState<AdminUser | null>(null);
 
   // 角色权限
   const canManageUsers = adminRole === 'super_admin' || adminRole === 'ops_admin';

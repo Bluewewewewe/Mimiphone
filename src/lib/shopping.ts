@@ -202,7 +202,7 @@ const CP_BROWSE_MESSAGES: Record<string, string[]> = {
   ],
 };
 
-export function triggerCPAutoShop(products: ShopProduct[], orders: ShopOrder[]): {
+export function triggerCPAutoShop(products: ShopProduct[], _orders: ShopOrder[]): {
   message: string;
   newOrder?: Omit<ShopOrder, 'id' | 'timestamp'>;
 } | null {
@@ -251,10 +251,9 @@ export function getRandomOnlineMembers(members: ShopMember[]): ShopMember[] {
   }));
 }
 
-export function generateBrowseComments(members: ShopMember[], products: ShopProduct[]): BrowseComment[] {
+export function generateBrowseComments(members: ShopMember[], _products: ShopProduct[]): BrowseComment[] {
   const comments: BrowseComment[] = [];
   const onlineMembers = members.filter(m => m.isOnline && m.id !== 'user');
-  const now = new Date();
 
   const commentTemplates: Record<string, string[]> = {
     tianlei: [

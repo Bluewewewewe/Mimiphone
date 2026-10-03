@@ -17,19 +17,6 @@ interface AdminDashboardProps {
 
 type Tab = "overview" | "users" | "tree" | "review" | "invites" | "redeem" | "forum" | "announce" | "bugs" | "permissions" | "audit_log" | "settings";
 
-interface User {
-  id: string;
-  username: string;
-  weibo_name?: string;
-  role: string;
-  status: string;
-  created_at: string;
-  invite_code_used?: string;
-  referrer_name?: string | null;
-  referrer_verify_status?: string;
-  referrer_ban_status?: string;
-}
-
 interface InviteCode {
   code: string;
   owner_id: string;
@@ -53,7 +40,7 @@ interface ForumPost {
   author_name: string;
 }
 
-export default function AdminDashboard({ token, username, onClose }: AdminDashboardProps) {
+export default function AdminDashboard({ token,  onClose }: AdminDashboardProps) {
   const [activeTab, setActiveTab] = useState<Tab>("overview");
   const [inviteCodes, setInviteCodes] = useState<InviteCode[]>([]);
   const [posts, setPosts] = useState<ForumPost[]>([]);

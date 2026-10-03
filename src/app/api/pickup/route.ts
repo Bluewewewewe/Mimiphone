@@ -4,10 +4,8 @@ import {
   requireAuth,
   requireAdmin,
   verifyToken,
-  hasPermission,
   hasPermissionDb,
   type VerifiedUser,
-  type AdminPermission,
 } from "@/lib/auth";
 import { rateLimit } from "@/lib/rate-limit";
 
@@ -54,7 +52,6 @@ function checkBan(user: VerifiedUser): NextResponse | null {
   return null;
 }
 
-
 async function buildUserInfoMap(
   supabase: Awaited<ReturnType<typeof getSupabaseClient>>,
   ids: any[]
@@ -71,7 +68,6 @@ async function buildUserInfoMap(
   });
   return map;
 }
-
 
 // ============================================================
 // 通知埋点（表不存在时静默失败）

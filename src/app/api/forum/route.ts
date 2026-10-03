@@ -3,7 +3,6 @@ import { getSupabaseClient } from "@/storage/database/supabase-client";
 import {
   requireAuth,
   requireAdmin,
-  hasPermission,
   hasPermissionDb,
   logAudit,
   type VerifiedUser,
@@ -41,21 +40,6 @@ class AuthRequiredError extends Error {}
 function bodyToken(body: any): string | undefined {
   const t = body?.authToken ?? body?.token;
   return typeof t === "string" ? t : undefined;
-}
-
-// 批量取用户实时中文名（author_id -> display_name），保证改名后老帖同步
-async function buildAuthorNameMap(supabase: Awaited<ReturnType<typeof getSupabaseClient>>, ids: any[]): Promise<Map<string, string>> {
-  const map = new Map<string, string>();
-  const uniq = Array.from(new Set((ids || []).filter((x): x is string => typeof x === "string")));
-  if (uniq.length === 0) return map;
-  const { data } = await supabase
-    .from("users")
-    .select("id, display_name")
-    .in("id", uniq);
-  (data || []).forEach((u: any) => {
-    if (u && u.id && u.display_name) map.set(u.id, String(u.display_name));
-  });
-  return map;
 }
 
 // 批量取用户公开信息（头像/中文名），用于帖子卡片与头像渲染

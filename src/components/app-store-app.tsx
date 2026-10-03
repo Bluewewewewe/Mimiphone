@@ -12,7 +12,6 @@ interface AppStoreAppProps {
     onClose: () => void;
 }
 
-const INSTALLED_KEY = "mimi_installed_apps";
 const BETA_VERIFIED_KEY = "mimi_beta_verified_apps";
 const STATUS_OPTIONS: { value: AppStatus; label: string }[] = [
     { value: "published", label: "已上架" },
@@ -21,7 +20,7 @@ const STATUS_OPTIONS: { value: AppStatus; label: string }[] = [
     { value: "hidden", label: "隐藏" },
 ];
 
-export default function AppStoreApp({ loginUsername, isAdmin, installedAppIds, onOpenApp, onInstall, onClose }: AppStoreAppProps) {
+export default function AppStoreApp({  isAdmin, installedAppIds, onOpenApp, onInstall, onClose }: AppStoreAppProps) {
     const [apps, setApps] = useState<StoreAppItem[]>([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState("");
@@ -205,7 +204,7 @@ export default function AppStoreApp({ loginUsername, isAdmin, installedAppIds, o
                     apps={apps}
                     onRefresh={loadApps}
                     apiAction={apiAction}
-                    onEditApp={(app) => { setSelectedApp(null); setShowAdminPanel(true); }}
+                    onEditApp={(_app) => { setSelectedApp(null); setShowAdminPanel(true); }}
                 />
             ) : (
                 <div style={{ flex: 1, overflowY: "auto", padding: "0 16px 20px" }}>
@@ -340,16 +339,6 @@ function AdminPanel({ apps, onRefresh, apiAction }: AdminPanelProps) {
         },
     };
 
-    async function handleQuickStatusChange(app: StoreAppItem, newStatus: AppStatus) {
-        setActionError("");
-        try {
-            await apiAction("update_app", { app: { id: app.id, status: newStatus } });
-            onRefresh();
-        } catch (e: unknown) {
-            setActionError(e instanceof Error ? e.message : String(e));
-        }
-    }
-
     async function handleDelete() {
         if (!confirmDelete) return;
         setActionError("");
@@ -467,7 +456,6 @@ function AdminPanel({ apps, onRefresh, apiAction }: AdminPanelProps) {
         </div>
     );
 }
-
 
 // ============ App Form Modal (Create/Edit) ============
 interface AppFormModalProps {

@@ -9,7 +9,7 @@ export const maxDuration = 30;
 
 /**
  * 心跳系统 - 灵感来自 dylan-heartbeat
- * 
+ *
  * 核心机制：
  * 1. 前端每隔一段时间调用此API
  * 2. API根据当前时间和爸妈状态，决定是否让爸妈主动联系米米
@@ -20,7 +20,7 @@ export async function POST(request: NextRequest) {
   try {
     await requireAuthRequest(request);
 
-    const { 
+    const {
       recentMessages = [],    // 最近聊天记录
       currentApp = 'home',   // 当前在哪个APP
     } = await request.json();
@@ -29,7 +29,7 @@ export async function POST(request: NextRequest) {
     const hour = now.getHours();
     const minute = now.getMinutes();
     const timeStr = `${hour.toString().padStart(2, '0')}:${minute.toString().padStart(2, '0')}`;
-    
+
     // 获取爸妈当前状态
     const dadStatus = getParentStatus(hour);
     const momStatus = getMomStatus(hour);
@@ -46,14 +46,14 @@ export async function POST(request: NextRequest) {
     }
 
     // 根据时间段调整唤醒间隔
-    const wakeInterval = (hour >= 10 && hour < 23) ? 45 : 120; // 白天45分钟，夜间120分钟
-    
+     // 白天45分钟，夜间120分钟
+
     // 如果用户刚聊过天，不主动联系
     if (minutesSinceLastUser < 5) {
-      return new Response(JSON.stringify({ 
-        shouldAct: false, 
+      return new Response(JSON.stringify({
+        shouldAct: false,
         reason: '用户刚聊过天',
-        messages: [] 
+        messages: []
       }), {
         headers: { 'Content-Type': 'application/json' },
       });
@@ -61,10 +61,10 @@ export async function POST(request: NextRequest) {
 
     // 随机决定谁主动联系
     const results: Array<{ speaker: string; text: string; toPartner?: boolean }> = [];
-    
+
     // 决定谁可能主动联系
     const possibleActors: Array<{ speaker: string; status: ParentStatusInfo }> = [];
-    
+
     if (!dadStatus.status.includes('睡觉') || isLateNight) {
       possibleActors.push({ speaker: 'dad', status: dadStatus });
     }
@@ -80,7 +80,7 @@ export async function POST(request: NextRequest) {
     let actorsToAct: Array<{ speaker: string; status: ParentStatusInfo }> = [];
     // 是否让爸妈互聊（不联系米米，两人自己在家庭群聊天）
     let partnerChat = false;
-    
+
     if (possibleActors.length >= 2) {
       if (rand < actThreshold) actorsToAct = [possibleActors[0]];       // 白天12%/深夜5% 爸爸主动找米米
       else if (rand < actThreshold * 2) actorsToAct = [possibleActors[1]]; // 白天12%/深夜5% 妈咪主动找米米
@@ -97,13 +97,13 @@ export async function POST(request: NextRequest) {
         const customHeaders = HeaderUtils.extractForwardHeaders(request.headers);
         const config = new Config();
         const client = new LLMClient(config, customHeaders);
-        
+
         // 随机决定谁先开口
         const firstSpeaker = Math.random() < 0.5 ? 'dad' : 'mom';
         const secondSpeaker = firstSpeaker === 'dad' ? 'mom' : 'dad';
         const firstStatus = firstSpeaker === 'dad' ? dadStatus : momStatus;
         const secondStatus = secondSpeaker === 'dad' ? dadStatus : momStatus;
-        
+
         const partnerChatPrompt = (speaker: string, status: ParentStatusInfo, partnerName: string, partnerActivity: string, timeStr: string) => {
           const whoName = speaker === 'dad' ? '田雷（爸爸）' : '梓渝（妈咪）';
           const profile = speaker === 'dad' ? DAD_PROFILE : MOM_PROFILE;
@@ -123,10 +123,10 @@ ${profile}`;
         const stream1 = client.stream(firstMessages, { model: heartbeatModel, temperature: 0.9 });
         for await (const chunk of stream1) { if (chunk.content) firstText += chunk.content.toString(); }
         const cleanFirst = firstText.trim().replace(/^(田雷|田栩宁|梓渝|郑朋|爸爸|妈咪)[：:]\s*/, '').replace(/^["「『]|["」』]$/g, '').trim();
-        
+
         if (cleanFirst.length > 0 && !cleanFirst.startsWith('[NO_ACTION]')) {
           results.push({ speaker: firstSpeaker, text: cleanFirst, toPartner: true });
-          
+
           // 第二个人70%概率回复
           if (Math.random() < 0.7) {
             const secondPrompt = partnerChatPrompt(secondSpeaker, secondStatus, secondSpeaker === 'dad' ? '梓渝' : '田雷', firstStatus.activity, timeStr);
@@ -149,10 +149,10 @@ ${profile}`;
     }
 
     if (actorsToAct.length === 0) {
-      return new Response(JSON.stringify({ 
-        shouldAct: false, 
+      return new Response(JSON.stringify({
+        shouldAct: false,
         reason: 'AI自主选择不联系',
-        messages: [] 
+        messages: []
       }), {
         headers: { 'Content-Type': 'application/json' },
       });
@@ -174,7 +174,7 @@ ${profile}`;
 
     for (const actor of actorsToAct) {
       const prompt = buildHeartbeatPrompt(actor.speaker, actor.status, timeStr, historyText, currentApp);
-      
+
       const messages: Array<{ role: 'system' | 'user'; content: string }> = [
         { role: 'system', content: prompt },
         { role: 'user', content: `现在是${timeStr}，你正在${actor.status.activity}。决定一下要不要主动联系米米？如果想联系，直接写你想说的话（一句话，30字以内），注意不能重复上面的对话记录。如果不想，只输出[NO_ACTION]。` },
@@ -195,7 +195,7 @@ ${profile}`;
         }
 
         const trimmed = fullText.trim();
-        
+
         // AI选择不发消息
         if (trimmed.startsWith('[NO_ACTION]')) {
           continue;
@@ -213,16 +213,16 @@ ${profile}`;
       } catch (err) {
         console.error('Heartbeat generate error:', err);
         // 失败时使用默认消息
-        const defaults = actor.speaker === 'dad' 
+        const defaults = actor.speaker === 'dad'
           ? ['在干嘛呢', '吃饭了没', '想你了', '作业写完了没']
           : ['宝贝在干嘛呀', '妈咪想你了', '今天开心吗', '吃水果了没'];
         results.push({ speaker: actor.speaker, text: defaults[Math.floor(Math.random() * defaults.length)] });
       }
     }
 
-    return new Response(JSON.stringify({ 
-      shouldAct: results.length > 0, 
-      messages: results 
+    return new Response(JSON.stringify({
+      shouldAct: results.length > 0,
+      messages: results
     }), {
       headers: { 'Content-Type': 'application/json' },
     });

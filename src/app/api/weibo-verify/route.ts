@@ -23,7 +23,7 @@ function generateInviteCode(): string {
     return code;
 }
 
-async function generateUserInviteCodes(username: string, userId: string) {
+async function generateUserInviteCodes(_username: string, userId: string) {
     const now = new Date().toISOString();
     const codes = [];
     for (let i = 0; i < 5; i++) {

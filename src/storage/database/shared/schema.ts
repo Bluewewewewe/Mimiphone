@@ -1,7 +1,4 @@
 import { pgTable, index, serial, varchar, text, timestamp } from "drizzle-orm/pg-core"
-import { sql } from "drizzle-orm"
-
-
 
 export const promotionCandidates = pgTable("promotion_candidates", {
 	id: serial().primaryKey().notNull(),

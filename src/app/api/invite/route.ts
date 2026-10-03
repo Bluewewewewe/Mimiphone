@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseClient } from "@/storage/database/supabase-client";
-import { randomUUID } from "crypto";
 
 function generateCode(prefix: string): string {
   const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
@@ -47,7 +46,7 @@ function mapInviteCode(item: Record<string, unknown>) {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { action, username, code, maxUses, expiresInDays, note, key, value, count = 1 } = body;
+    const { action, username, code,  note, key, value, count = 1 } = body;
 
     const supabase = await getSupabaseClient();
 

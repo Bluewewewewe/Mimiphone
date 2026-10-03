@@ -28,7 +28,7 @@ function formatTime(iso: string): string {
   return d.getMonth() + 1 + "月" + d.getDate() + "日";
 }
 
-export function ContentQueue({ token, loginUsername }: { token: string; loginUsername: string }) {
+export function ContentQueue({ token,  }: { token: string; loginUsername: string }) {
   const [items, setItems] = useState<QueueItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [scope, setScope] = useState<"all" | "mine" | "unassigned">("all");

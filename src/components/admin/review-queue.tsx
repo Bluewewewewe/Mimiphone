@@ -70,7 +70,7 @@ export default function ReviewQueue({ currentAdminId, token: tokenProp }: { curr
   const [filter, setFilter] = useState<"all" | "mine" | "unassigned" | "overdue" | "my_reviews">("all");
   const [subTab, setSubTab] = useState<"queue" | "history">("queue");
   const [loading, setLoading] = useState(false);
-  const [autoAssigning, setAutoAssigning] = useState(false);
+  const [, setAutoAssigning] = useState(false);
   const [error, setError] = useState("");
   const [historyPage, setHistoryPage] = useState(1);
   const [historyTotal, setHistoryTotal] = useState(0);

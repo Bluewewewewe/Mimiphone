@@ -222,7 +222,7 @@ export function wsCanAdminister(user: WSUserContext | null): boolean {
 export function wsCanModifyProduct(
     product: WSProduct,
     user: WSUserContext | null,
-    now: number = Date.now()
+    _now: number = Date.now()
 ): boolean {
     if (!user) return false;
     if (user.isAdmin) return true;

@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, } from "react";
 
 // ============================================================
 // 米米请就位（pickup）演绎楼 App
@@ -196,7 +196,7 @@ export function PickupApp({ onClose, loginUsername }: { onClose: () => void; log
   const [subRepliesPage, setSubRepliesPage] = useState(1);
   const [subRepliesTotal, setSubRepliesTotal] = useState(0);
   const [tags, setTags] = useState<Tag[]>([]);
-  const [identity, setIdentity] = useState<Identity | null>(null);
+  const [, setIdentity] = useState<Identity | null>(null);
   const [loading, setLoading] = useState(false);
   const [homeNotice, setHomeNotice] = useState("");
 
@@ -211,12 +211,12 @@ export function PickupApp({ onClose, loginUsername }: { onClose: () => void; log
   const [newTagIds, setNewTagIds] = useState<string[]>([]);
   const [newIdentityRequired, setNewIdentityRequired] = useState(true);
   const [newHostLabel, setNewHostLabel] = useState("");
-  const [newIdentityEmoji, setNewIdentityEmoji] = useState("🐰");
-  const [newIdentityName, setNewIdentityName] = useState("");
+  const [, ] = useState("🐰");
+  const [, ] = useState("");
 
   // 首次回复身份弹层
   const [showIdentitySheet, setShowIdentitySheet] = useState(false);
-  const [pendingReplyText, setPendingReplyText] = useState("");
+  const [, setPendingReplyText] = useState("");
   const [pendingIdentityName, setPendingIdentityName] = useState("");
   const [pendingIdentityEmoji, setPendingIdentityEmoji] = useState("🐰");
   const [useAccountName, setUseAccountName] = useState(false);

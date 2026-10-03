@@ -318,7 +318,6 @@ const BUILTIN_SECTIONS: ForumSection[] = [
     { id: "bug-report", icon: "🐛", name: "Bug反馈", desc: "提交bug与功能建议" }
 ];
 
-
 // ============ 论坛组件 ============
 interface ForumAppProps {
     onClose?: () => void;
@@ -329,7 +328,7 @@ interface ForumAppProps {
     onConsumeInitialPost?: () => void;
 }
 
-export function ForumApp({ onClose, isAdmin = false, loginUsername = "", onViewUserProfile, initialPostId = null, onConsumeInitialPost }: ForumAppProps = {}) {
+export function ForumApp({ onClose, isAdmin = false, loginUsername = "",  initialPostId = null, onConsumeInitialPost }: ForumAppProps = {}) {
     const [view, setView] = useState<"sections" | "posts" | "postDetail" | "newPost" | "search" | "notifications" | "messages" | "me">("sections");
     const [mainTab, setMainTab] = useState<"home" | "messages" | "me">("home");
     const [followingPosts, setFollowingPosts] = useState<ForumPost[]>([]);
@@ -345,7 +344,7 @@ export function ForumApp({ onClose, isAdmin = false, loginUsername = "", onViewU
     const [sortBy, setSortBy] = useState<"latest" | "hot" | "essence">("latest");
     const [isLoading, setIsLoading] = useState(false);
     const [apiError, setApiError] = useState<string | null>(null);
-    const [isOffline, setIsOffline] = useState(false);
+    const [, setIsOffline] = useState(false);
     const [searchQuery, setSearchQuery] = useState("");
     const [searchType, setSearchType] = useState<"post" | "user">("post");
     const [searchFilter, setSearchFilter] = useState<{ section: string; time: string; essenceOnly: boolean }>({
