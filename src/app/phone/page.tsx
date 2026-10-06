@@ -10592,6 +10592,7 @@ export default function PhonePage() {
 
     return (
         <div className="phone-page" style={{ background: WALLPAPER_PRESETS[wallpaper] }}>
+            <VersionUpdateToast />
             {}
             {showInfoPanel && <div className="info-panel">
                 {isAdmin && <div
