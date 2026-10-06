@@ -34,6 +34,7 @@ import {
 
 import { ForumApp } from "@/components/forum-app";
 import { PickupApp } from "@/components/pickup-app";
+import { VersionUpdateToast } from "@/components/version-update-toast";
 import { AdminApp } from "@/components/admin-app";
 import { InviteApp } from "@/components/invite-app";
 import UserProfileApp from "@/components/user-profile-app";

@@ -28,6 +28,7 @@ type PickupPost = {
     created_at: string;
     pickup_tags?: { id: string; name: string }[];
     tag_ids?: string[];
+    content?: string;
 };
 
 type PickupReport = {
