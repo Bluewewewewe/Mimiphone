@@ -124,24 +124,34 @@ export async function GET(request: NextRequest) {
 
         let q = supabase
           .from("pickup_posts")
-          .select("*, pickup_tags(id, name)", { count: "exact" })
+          .select("*", { count: "exact" })
           .eq("status", "active");
 
         if (tagId) q = q.contains("tag_ids", [tagId]);
         if (keyword) q = q.ilike("title", `%${keyword}%`);
 
         if (sort === "heat") {
-          // 热度 = 回复数*2 + 点赞数，再用 created_at 兜底
           q = q.order("replies_count", { ascending: false });
           q = q.order("likes_count", { ascending: false });
         }
         q = q.order("created_at", { ascending: false });
 
-        const { data, error, count } = await q
-          .range(from, from + PER_PAGE - 1);
-
+        const { data, error, count } = await q.range(from, from + PER_PAGE - 1);
         if (error) throw error;
-        return NextResponse.json({ success: true, posts: data || [], total: count || 0, page });
+
+        // 手动关联标签
+        const allTagIds = new Set<string>();
+        (data || []).forEach((p: any) => (p.tag_ids || []).forEach((id: string) => allTagIds.add(id)));
+        let tagMap = new Map<string, { id: string; name: string }>();
+        if (allTagIds.size > 0) {
+          const { data: tagsData } = await supabase.from("pickup_tags").select("id, name").in("id", [...allTagIds]);
+          (tagsData || []).forEach((t: any) => tagMap.set(t.id, { id: t.id, name: t.name }));
+        }
+        const posts = (data || []).map((p: any) => ({
+          ...p,
+          pickup_tags: (p.tag_ids || []).map((id: string) => tagMap.get(id) || { id, name: id }),
+        }));
+        return NextResponse.json({ success: true, posts, total: count || 0, page });
       }
 
       case "get": {
@@ -149,9 +159,20 @@ export async function GET(request: NextRequest) {
         if (!postId) return badRequest("缺少 postId");
         const { data: found, error } = await supabase
           .from("pickup_posts")
-          .select("*, pickup_tags(id, name)")
+          .select("*")
           .eq("id", postId)
           .single();
+        if (!error && found) {
+          const allTagIds = (found.tag_ids || []) as string[];
+          if (allTagIds.length > 0) {
+            const { data: tagsData } = await supabase.from("pickup_tags").select("id, name").in("id", allTagIds);
+            const tagMap = new Map<string, { id: string; name: string }>();
+            (tagsData || []).forEach((t: any) => tagMap.set(t.id, { id: t.id, name: t.name }));
+            (found as any).pickup_tags = allTagIds.map((id: string) => tagMap.get(id) || { id, name: id });
+          } else {
+            (found as any).pickup_tags = [];
+          }
+        }
         if (error || !found) return NextResponse.json({ success: false, error: "帖子不存在" }, { status: 404 });
         // pending 帖只有楼主本人能看
         if (found.status !== "active") {
@@ -377,7 +398,7 @@ export async function GET(request: NextRequest) {
         const from = (page - 1) * pageSize;
         let pq = supabase
           .from("pickup_posts")
-          .select("*, pickup_tags(id, name)", { count: "exact" })
+          .select("*", { count: "exact" })
           .eq("status", "pending");
         if (scope === "mine") pq = pq.eq("assigned_to", adminUser.id);
         if (scope === "unassigned") pq = pq.is("assigned_to", null);
@@ -392,9 +413,17 @@ export async function GET(request: NextRequest) {
             .from("users").select("id, nickname, username").in("id", adminIds);
           nameMap = new Map((admins || []).map((a: any) => [a.id, a.nickname || a.username]));
         }
+        const allTagIds = new Set<string>();
+        (data || []).forEach((p: any) => (p.tag_ids || []).forEach((id: string) => allTagIds.add(id)));
+        let tagMap = new Map<string, { id: string; name: string }>();
+        if (allTagIds.size > 0) {
+          const { data: tData } = await supabase.from("pickup_tags").select("id, name").in("id", [...allTagIds]);
+          (tData || []).forEach((t: any) => tagMap.set(t.id, { id: t.id, name: t.name }));
+        }
         const postsOut = (data || []).map((x: any) => ({
           ...x,
           assigned_to_name: x.assigned_to ? (nameMap.get(x.assigned_to) || null) : null,
+          pickup_tags: (x.tag_ids || []).map((id: string) => tagMap.get(id) || { id, name: id }),
         }));
         return NextResponse.json({ success: true, posts: postsOut, total: count || 0, page });
       }
@@ -462,14 +491,14 @@ export async function POST(request: NextRequest) {
         const userMap = await buildUserInfoMap(supabase, [user.id]);
         const userInfo = userMap.get(user.id) || { name: user.username, avatar: "", username: user.username };
 
-        // 是否需要审核：只要带了未审核标签，帖子进 pending
+        // 是否需要审核：带了「他人创建的未审核标签」才进 pending，自己创建的标签视为通过
         let needReview = false;
         if (tagIds.length > 0) {
           const { data: checkTags } = await supabase
             .from("pickup_tags")
-            .select("approved")
+            .select("approved, creator_id")
             .in("id", tagIds);
-          needReview = (checkTags || []).some((t: any) => !t.approved);
+          needReview = (checkTags || []).some((t: any) => !t.approved && t.creator_id !== user.id);
         }
 
         const { data, error } = await supabase
@@ -690,7 +719,7 @@ export async function POST(request: NextRequest) {
         const normalizedName = name.startsWith("#") ? name : `#${name}`;
 
         const { data: existing } = await supabase
-          .from("pickup_tags").select("id").eq("name", normalizedName).single();
+          .from("pickup_tags").select("id, name, approved").eq("name", normalizedName).single();
         if (existing) {
           return NextResponse.json({ success: true, tag: existing, exists: true });
         }

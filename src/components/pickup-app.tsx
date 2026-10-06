@@ -774,7 +774,7 @@ export function PickupApp({ onClose, loginUsername }: { onClose: () => void; log
                   const t = tags.find((x) => x.id === id);
                   return (
                     <span key={id} style={{ fontSize: 12, padding: "4px 6px 4px 12px", borderRadius: 12, background: "#ffe4ec", color: "#f91880", fontWeight: 600, display: "inline-flex", alignItems: "center", gap: 6 }}>
-                      {t?.name || localTagNames[id] || id.slice(0, 6)}
+                      {t?.name || localTagNames[id] || "标签"}
                       <button onClick={() => setNewTagIds(newTagIds.filter((x) => x !== id))} style={{ background: "none", border: "none", color: "#f91880", cursor: "pointer", padding: 0, fontSize: 14, lineHeight: 1 }}>×</button>
                     </span>
                   );
@@ -836,7 +836,7 @@ export function PickupApp({ onClose, loginUsername }: { onClose: () => void; log
                           }
                           if (r.tag?.id && !newTagIds.includes(r.tag.id)) {
                             setNewTagIds([...newTagIds, r.tag.id]);
-                            setLocalTagNames((prev) => ({ ...prev, [r.tag.id]: r.tag.name }));
+                            setLocalTagNames((prev) => ({ ...prev, [r.tag.id]: r.tag.name || (createTagQ.startsWith('#') ? createTagQ : '#' + createTagQ) }));
                           }
                           setCreateTagQ("");
                           setCreateTagResults([]);
