@@ -564,7 +564,7 @@ export async function POST(request: NextRequest) {
         if (isHostReply) {
           // 楼主发言：使用 host_label，不创建演绎身份记录
           displayName = post.host_label || post.owner_display || userInfo.name;
-          displayEmoji = identityEmoji || userInfo.emoji || "🐰";
+          displayEmoji = identityEmoji || "🐰";
         } else if (post.identity_required) {
           if (existingIdentity) {
             displayName = existingIdentity.display_name;
