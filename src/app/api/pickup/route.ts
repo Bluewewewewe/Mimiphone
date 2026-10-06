@@ -539,6 +539,7 @@ export async function POST(request: NextRequest) {
         const content = (body.content || "").toString().trim();
         const identityName = body.identityName;
         const identityEmoji = body.identityEmoji || "🐰";
+        const identityMode = body.identityMode;
 
         if (!postId) return badRequest("缺少 postId");
         if (!content || content.length > REPLY_MAX) return badRequest(`回复不超过 ${REPLY_MAX} 字`);
@@ -559,7 +560,12 @@ export async function POST(request: NextRequest) {
           .eq("post_id", postId)
           .single();
 
-        if (post.identity_required) {
+        const isHostReply = identityMode === "host" && post.owner_id === user.id;
+        if (isHostReply) {
+          // 楼主发言：使用 host_label，不创建演绎身份记录
+          displayName = post.host_label || post.owner_display || userInfo.name;
+          displayEmoji = identityEmoji || userInfo.emoji || "🐰";
+        } else if (post.identity_required) {
           if (existingIdentity) {
             displayName = existingIdentity.display_name;
             displayEmoji = existingIdentity.emoji;
@@ -600,6 +606,7 @@ export async function POST(request: NextRequest) {
             author_emoji: displayEmoji,
             floor_no: floorNo,
             content,
+            is_host_reply: isHostReply,
           })
           .select()
           .single();

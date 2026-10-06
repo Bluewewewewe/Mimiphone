@@ -220,6 +220,7 @@ export function PickupApp({ onClose, loginUsername }: { onClose: () => void; log
   const [pendingIdentityName, setPendingIdentityName] = useState("");
   const [pendingIdentityEmoji, setPendingIdentityEmoji] = useState("🐰");
   const [useAccountName, setUseAccountName] = useState(false);
+  const [useHostIdentity, setUseHostIdentity] = useState(false);
 
   // 举报
   const [showReportSheet, setShowReportSheet] = useState(false);
@@ -374,7 +375,7 @@ export function PickupApp({ onClose, loginUsername }: { onClose: () => void; log
   };
 
   // -------- 楼层回复 --------
-  const handleReply = async (forceIdentityName?: string, forceEmoji?: string) => {
+  const handleReply = async (forceIdentityName?: string, forceEmoji?: string, forceMode?: string) => {
     if (!(view.kind === "post")) return;
     if (!replyText.trim()) return;
     setLoading(true);
@@ -386,6 +387,7 @@ export function PickupApp({ onClose, loginUsername }: { onClose: () => void; log
         content: replyText.trim(),
         identityName: forceIdentityName,
         identityEmoji: forceEmoji,
+        identityMode: forceMode,
       });
       if (res.success) {
         setReplyText("");
@@ -989,11 +991,23 @@ export function PickupApp({ onClose, loginUsername }: { onClose: () => void; log
           <div style={{ position: "absolute", inset: 0, background: "rgba(0,0,0,.3)", zIndex: 100, display: "flex", flexDirection: "column" }}>
             <div style={{ background: "#fff", borderRadius: "16px 16px 0 0", marginTop: "auto", padding: 20 }}>
               <div style={{ fontSize: 16, fontWeight: 700, marginBottom: 14 }}>设置演绎身份</div>
+              {view.kind === "post" && post.owner_id === user.id && (
+                <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, marginBottom: 14, cursor: "pointer", padding: "10px 12px", background: "#fff0f6", borderRadius: 10 }}>
+                  <input type="checkbox" checked={useHostIdentity} onChange={(e) => {
+                    setUseHostIdentity(e.target.checked);
+                    if (e.target.checked) setUseAccountName(false);
+                  }} />
+                  <span>🏠 作为楼主发言（{post.host_label || post.owner_display || user.name}）</span>
+                </label>
+              )}
               <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, marginBottom: 14, cursor: "pointer" }}>
-                <input type="checkbox" checked={useAccountName} onChange={(e) => setUseAccountName(e.target.checked)} />
+                <input type="checkbox" checked={useAccountName} onChange={(e) => {
+                  setUseAccountName(e.target.checked);
+                  if (e.target.checked) setUseHostIdentity(false);
+                }} />
                 <span>与账号同名（{user.name}）</span>
               </label>
-              {!useAccountName && (
+              {!useAccountName && !useHostIdentity && (
                 <>
                   <div style={{ fontSize: 12, color: "#536471", marginBottom: 6 }}>角色名</div>
                   <input
