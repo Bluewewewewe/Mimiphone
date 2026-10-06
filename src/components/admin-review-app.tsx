@@ -78,6 +78,7 @@ export function AdminReviewApp({ loginUsername, onClose }: { loginUsername: stri
     const [mergeMode, setMergeMode] = useState(false);
     const [mergeSelected, setMergeSelected] = useState<Set<string>>(new Set());
     const [mergeTarget, setMergeTarget] = useState<string>("");
+    const [expandedPost, setExpandedPost] = useState<string | null>(null);
 
     const token = typeof window !== "undefined" ? localStorage.getItem("auth_token") || "" : "";
 
@@ -638,6 +639,14 @@ export function AdminReviewApp({ loginUsername, onClose }: { loginUsername: stri
                                     <div style={{ fontSize: 10, color: "#888", marginBottom: 8 }}>
                                         状态：{post.status === "active" ? "正常" : post.status === "deleted" ? "已删除" : post.status === "hidden" ? "已隐藏" : post.status}
                                     </div>
+                                    {expandedPost === post.id ? (
+                                        <div style={{ fontSize: 13, color: "#333", lineHeight: 1.7, padding: "10px 0", borderTop: "1px solid rgba(46,92,51,0.15)", borderBottom: "1px solid rgba(46,92,51,0.15)", marginBottom: 8, wordBreak: "break-word" }}>
+                                            {(post.content || "").slice(0, 2000)}
+                                            {(post.content || "").length > 2000 ? "..." : ""}
+                                        </div>
+                                    ) : (
+                                        <div onClick={() => setExpandedPost(post.id)} style={{ fontSize: 12, color: "#2e7d32", cursor: "pointer", marginBottom: 8, padding: "6px 0" }}>📄 点击展开内容</div>
+                                    )}
                                     <div style={{ display: "flex", gap: 6 }}>
                                         <button onClick={() => {
                                             if (confirm("确认删除帖子「" + post.title + "」？")) {
