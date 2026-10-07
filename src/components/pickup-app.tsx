@@ -432,6 +432,7 @@ export function PickupApp({ onClose, loginUsername }: { onClose: () => void; log
         content: subReplyText.trim(),
         replyToUsername: replyTo?.username,
         replyToDisplay: replyTo?.display,
+        identityMode: useHostIdentity ? "host" : undefined,
       });
       if (res.success) {
         setSubReplyText("");
@@ -1129,6 +1130,15 @@ export function PickupApp({ onClose, loginUsername }: { onClose: () => void; log
         </div>
 
         {/* 子回复输入框 */}
+        {view.kind === "replyPage" && view.post.owner_id === user.id && (
+          <div style={{ padding: "8px 16px", background: "#fff", borderBottom: "1px solid #eff3f4", display: "flex", alignItems: "center", gap: 8 }}>
+            <input type="checkbox" id="subHostReply" checked={useHostIdentity} onChange={(e) => {
+              setUseHostIdentity(e.target.checked);
+              if (e.target.checked) setUseAccountName(false);
+            }} style={{ accentColor: "#f91880", width: 16, height: 16 }} />
+            <label htmlFor="subHostReply" style={{ fontSize: 13, color: "#f91880", fontWeight: 600, cursor: "pointer" }}>🏠 以楼主身份回复（{view.post.host_label || view.post.owner_display || user.name}）</label>
+          </div>
+        )}
         <div style={{ height: 56, borderTop: "1px solid #eff3f4", background: "#fff", display: "flex", alignItems: "center", padding: "0 14px", gap: 10 }}>
           <input
             value={subReplyText}
