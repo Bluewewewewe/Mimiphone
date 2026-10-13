@@ -113,6 +113,12 @@ export async function GET(request: NextRequest) {
   const queryToken = url.searchParams.get("token");
   const getToken = headerToken || queryToken;
 
+  // 顶层解析当前浏览用户（供需要"我是否已赞"等场景）
+  let viewerId: string | null = null;
+  if (getToken) {
+    try { const vu = await verifyToken(getToken); viewerId = vu?.id || null; } catch { /* 未登录游客 */ }
+  }
+
   try {
     switch (action) {
       case "list": {
@@ -176,10 +182,6 @@ export async function GET(request: NextRequest) {
         if (error || !found) return NextResponse.json({ success: false, error: "帖子不存在" }, { status: 404 });
         // pending 帖只有楼主本人能看
         if (found.status !== "active") {
-          let viewerId: string | null = null;
-          if (getToken) {
-            try { const vu = await verifyToken(getToken); viewerId = vu?.id || null; } catch { /* */ }
-          }
           if (viewerId !== found.owner_id) {
             return NextResponse.json({ success: false, error: "帖子不存在" }, { status: 404 });
           }
@@ -206,7 +208,20 @@ export async function GET(request: NextRequest) {
 
         const { data, error, count } = await q.range(from, from + PER_PAGE - 1);
         if (error) throw error;
-        return NextResponse.json({ success: true, replies: data || [], total: count || 0, page });
+
+        // 附带当前用户已点赞的楼层 id 集合
+        let likedReplyIds: string[] = [];
+        if (viewerId && data && data.length > 0) {
+          const replyIds = data.map((r: any) => r.id);
+          const { data: likes } = await supabase
+            .from("pickup_reply_likes")
+            .select("reply_id")
+            .eq("user_id", viewerId)
+            .in("reply_id", replyIds);
+          likedReplyIds = (likes || []).map((l: any) => l.reply_id);
+        }
+
+        return NextResponse.json({ success: true, replies: data || [], total: count || 0, page, likedReplyIds });
       }
 
       case "sub_replies": {
@@ -738,6 +753,74 @@ export async function POST(request: NextRequest) {
           .single();
         if (error) throw error;
         return NextResponse.json({ success: true, tag: data, pending: true });
+      }
+
+      case "like_reply": {
+        const replyId = body.replyId;
+        if (!replyId) return badRequest("缺少 replyId");
+
+        // 查楼层是否存在、拿到作者
+        const { data: reply, error: rErr } = await supabase
+          .from("pickup_replies")
+          .select("id, post_id, author_id, author_display, content, floor_no, status")
+          .eq("id", replyId)
+          .single();
+        if (rErr || !reply) return badRequest("楼层不存在");
+        if (reply.status !== "active") return badRequest("楼层不可用");
+
+        // 是否已赞
+        const { data: exist } = await supabase
+          .from("pickup_reply_likes")
+          .select("id")
+          .eq("user_id", user.id)
+          .eq("reply_id", replyId)
+          .maybeSingle();
+
+        let liked: boolean;
+        if (exist) {
+          // 取消赞
+          await supabase.from("pickup_reply_likes").delete().eq("id", exist.id);
+          const { data: beforeDec } = await supabase
+            .from("pickup_replies").select("likes_count").eq("id", replyId).single();
+          await supabase.from("pickup_replies")
+            .update({ likes_count: Math.max(0, (beforeDec?.likes_count ?? 1) - 1) })
+            .eq("id", replyId);
+          liked = false;
+        } else {
+          // 点赞
+          const { error: insErr } = await supabase
+            .from("pickup_reply_likes")
+            .insert({ reply_id: replyId, user_id: user.id, post_id: reply.post_id });
+          if (insErr) {
+            // 唯一键冲突等情况按已赞处理
+            liked = true;
+          } else {
+            const { data: beforeInc } = await supabase
+              .from("pickup_replies").select("likes_count").eq("id", replyId).single();
+            await supabase.from("pickup_replies")
+              .update({ likes_count: (beforeInc?.likes_count ?? 0) + 1 })
+              .eq("id", replyId);
+            liked = true;
+            // 通知被赞者（不通知自己）
+            if (reply.author_id && reply.author_id !== user.id) {
+              const snippet = (reply.content || "").slice(0, 30);
+              insertNotification({
+                userId: reply.author_id,
+                type: "like_reply",
+                title: `${user.username} 赞了你的评论`,
+                content: snippet,
+                relatedPostId: reply.post_id,
+                relatedReplyId: reply.id,
+                extra: { floorNo: reply.floor_no, fromName: user.username },
+              });
+            }
+          }
+        }
+
+        const { data: updated } = await supabase
+          .from("pickup_replies").select("likes_count").eq("id", replyId).single();
+
+        return NextResponse.json({ success: true, liked, likesCount: updated?.likes_count ?? 0 });
       }
 
       case "report": {

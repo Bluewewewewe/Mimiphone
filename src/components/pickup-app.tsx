@@ -92,7 +92,7 @@ interface Notification {
 
 const NOTIF_ICON: Record<string, string> = {
   reply: '💬', mention: '@', report_result: '⚖️',
-  admin_action: '🛡️', system_announce: '📢', admin_custom: '✉️', version: '🎉',
+  admin_action: '🛡️', system_announce: '📢', admin_custom: '✉️', version: '🎉', like_reply: '❤️',
 };
 
 const NOTIF_API = "/api/notifications";
@@ -203,6 +203,8 @@ export function PickupApp({ onClose, loginUsername }: { onClose: () => void; log
   // 回复输入
   const [replyText, setReplyText] = useState("");
   const floorListRef = useRef<HTMLDivElement>(null);
+  const [likedReplyIds, setLikedReplyIds] = useState<Set<string>>(new Set());
+  const [likingIds, setLikingIds] = useState<Set<string>>(new Set());
   const [showBackToTop, setShowBackToTop] = useState(false);
   const [replyTo, setReplyTo] = useState<{ username: string; display: string } | null>(null);
   const [subReplyText, setSubReplyText] = useState("");
@@ -289,6 +291,16 @@ export function PickupApp({ onClose, loginUsername }: { onClose: () => void; log
         setReplies(res.replies || []);
         setRepliesTotal(res.total || 0);
         setRepliesPage(page);
+        const liked = new Set<string>(res.likedReplyIds || []);
+        setLikedReplyIds((prev) => {
+          const merged = new Set(prev);
+          liked.forEach((id) => merged.add(id));
+          // 当前页返回的楼层：未出现在 liked 里的要移除（可能在别处取消过赞）
+          (res.replies || []).forEach((r: any) => {
+            if (!liked.has(r.id)) merged.delete(r.id);
+          });
+          return merged;
+        });
       }
     } finally {
       setLoading(false);
@@ -340,6 +352,49 @@ export function PickupApp({ onClose, loginUsername }: { onClose: () => void; log
     const res = await apiGet("identity", { postId }, token);
     if (res.success) setIdentity(res.identity || null);
   }, [token]);
+
+  const toggleLikeReply = async (replyId: string) => {
+    if (likingIds.has(replyId)) return;
+    setLikingIds((prev) => new Set(prev).add(replyId));
+    const wasLiked = likedReplyIds.has(replyId);
+    // 乐观更新
+    setLikedReplyIds((prev) => {
+      const next = new Set(prev);
+      if (wasLiked) next.delete(replyId); else next.add(replyId);
+      return next;
+    });
+    setReplies((prev) => prev.map((r) => r.id === replyId
+      ? { ...r, likes_count: Math.max(0, (r.likes_count || 0) + (wasLiked ? -1 : 1)) }
+      : r));
+    try {
+      const res = await apiPost({ action: "like_reply", token, replyId });
+      if (res.success) {
+        setLikedReplyIds((prev) => {
+          const next = new Set(prev);
+          if (res.liked) next.add(replyId); else next.delete(replyId);
+          return next;
+        });
+        setReplies((prev) => prev.map((r) => r.id === replyId
+          ? { ...r, likes_count: res.likesCount ?? r.likes_count }
+          : r));
+      } else {
+        // 回滚
+        setLikedReplyIds((prev) => {
+          const next = new Set(prev);
+          if (wasLiked) next.add(replyId); else next.delete(replyId);
+          return next;
+        });
+        setReplies((prev) => prev.map((r) => r.id === replyId
+          ? { ...r, likes_count: Math.max(0, (r.likes_count || 0) + (wasLiked ? 1 : -1)) }
+          : r));
+        alert(res.error || "操作失败");
+      }
+    } catch {
+      alert("网络错误，请重试");
+    } finally {
+      setLikingIds((prev) => { const n = new Set(prev); n.delete(replyId); return n; });
+    }
+  };
 
   const handleFloorScroll = useCallback(() => {
     const el = floorListRef.current;
@@ -906,42 +961,42 @@ export function PickupApp({ onClose, loginUsername }: { onClose: () => void; log
           </button>
         </div>
 
-        {/* 首楼 */}
-        <div style={{ padding: "14px 16px", background: "#fff", borderBottom: "1px solid #eff3f4" }}>
-          <div style={{ fontSize: 17, fontWeight: 800, lineHeight: 1.4 }}>{post.title}</div>
-          {post.pickup_tags && post.pickup_tags.length > 0 && (
-            <div style={{ display: "flex", gap: 6, marginTop: 8, flexWrap: "wrap" }}>
-              {post.pickup_tags.map((t) => <span key={t.id} style={{ fontSize: 11, color: "#1d9bf0", background: "#e8f5fe", padding: "2px 8px", borderRadius: 10 }}>{t.name}</span>)}
-            </div>
-          )}
-          <div style={{ fontSize: 14, lineHeight: 1.6, marginTop: 10, whiteSpace: "pre-wrap" }}>{post.content}</div>
-          <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
-            {post.identity_required && <span style={{ fontSize: 11, padding: "2px 8px", borderRadius: 4, background: "#fff4e5", color: "#f08c00", fontWeight: 600 }}>本楼需要演绎身份</span>}
-            {!post.identity_required && <span style={{ fontSize: 11, padding: "2px 8px", borderRadius: 4, background: "#ebfbee", color: "#2f9e44", fontWeight: 600 }}>本楼免身份</span>}
-          </div>
-          <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 12, paddingTop: 10, borderTop: "1px solid #f5f8fa" }}>
-            <div style={{ width: 32, height: 32, borderRadius: "50%", background: "#ffe4ec", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16 }}>{post.owner_emoji || "🐰"}</div>
-            <div>
-              <div style={{ fontSize: 13, fontWeight: 700 }}>{post.host_label || post.owner_display} <span style={{ background: "#f91880", color: "#fff", fontSize: 10, padding: "1px 6px", borderRadius: 4, fontWeight: 600 }}>楼主</span></div>
-              <div style={{ fontSize: 11, color: "#8899a6" }}>{timeAgo(post.created_at)}</div>
-            </div>
-          </div>
-        </div>
-
-        {/* 楼层排序 */}
-        <div style={{ padding: "10px 16px", background: "#fff", borderBottom: "1px solid #eff3f4", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-          <span style={{ fontSize: 13, color: "#536471" }}>{repliesTotal} 层楼</span>
-          <div style={{ display: "flex", gap: 6 }}>
-            {(["floor", "heat", "floor_desc"] as const).map((s) => (
-              <button key={s} onClick={() => { setReplySort(s); loadReplies(post.id, 1); }} style={{ fontSize: 12, padding: "4px 10px", borderRadius: 12, border: "none", background: replySort === s ? "#f91880" : "#eef1f3", color: replySort === s ? "#fff" : "#536471", fontWeight: replySort === s ? 600 : 400, cursor: "pointer" }}>
-                {s === "floor" ? "楼序 ↑" : s === "heat" ? "🔥 热度" : "楼序 ↓"}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        {/* 楼层列表 */}
+        {/* 可滚动区域：首楼 + 排序栏 + 楼层列表一起滚 */}
         <div ref={floorListRef} onScroll={handleFloorScroll} style={{ flex: 1, overflowY: "auto", position: "relative" }}>
+          {/* 首楼 */}
+          <div style={{ padding: "14px 16px", background: "#fff", borderBottom: "8px solid #f7f9f9" }}>
+            <div style={{ fontSize: 17, fontWeight: 800, lineHeight: 1.4 }}>{post.title}</div>
+            {post.pickup_tags && post.pickup_tags.length > 0 && (
+              <div style={{ display: "flex", gap: 6, marginTop: 8, flexWrap: "wrap" }}>
+                {post.pickup_tags.map((t) => <span key={t.id} style={{ fontSize: 11, color: "#1d9bf0", background: "#e8f5fe", padding: "2px 8px", borderRadius: 10 }}>{t.name}</span>)}
+              </div>
+            )}
+            <div style={{ fontSize: 14, lineHeight: 1.6, marginTop: 10, whiteSpace: "pre-wrap" }}>{post.content}</div>
+            <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
+              {post.identity_required && <span style={{ fontSize: 11, padding: "2px 8px", borderRadius: 4, background: "#fff4e5", color: "#f08c00", fontWeight: 600 }}>本楼需要演绎身份</span>}
+              {!post.identity_required && <span style={{ fontSize: 11, padding: "2px 8px", borderRadius: 4, background: "#ebfbee", color: "#2f9e44", fontWeight: 600 }}>本楼免身份</span>}
+            </div>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 12, paddingTop: 10, borderTop: "1px solid #f5f8fa" }}>
+              <div style={{ width: 32, height: 32, borderRadius: "50%", background: "#ffe4ec", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16 }}>{post.owner_emoji || "🐰"}</div>
+              <div>
+                <div style={{ fontSize: 13, fontWeight: 700 }}>{post.host_label || post.owner_display} <span style={{ background: "#f91880", color: "#fff", fontSize: 10, padding: "1px 6px", borderRadius: 4, fontWeight: 600 }}>楼主</span></div>
+                <div style={{ fontSize: 11, color: "#8899a6" }}>{timeAgo(post.created_at)}</div>
+              </div>
+            </div>
+          </div>
+
+          {/* 楼层排序（吸顶） */}
+          <div style={{ position: "sticky", top: 0, zIndex: 5, padding: "10px 16px", background: "rgba(255,255,255,0.96)", backdropFilter: "blur(8px)", borderBottom: "1px solid #eff3f4", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+            <span style={{ fontSize: 13, color: "#536471" }}>{repliesTotal} 层楼</span>
+            <div style={{ display: "flex", gap: 6 }}>
+              {(["floor", "heat", "floor_desc"] as const).map((s) => (
+                <button key={s} onClick={() => { setReplySort(s); loadReplies(post.id, 1); }} style={{ fontSize: 12, padding: "4px 10px", borderRadius: 12, border: "none", background: replySort === s ? "#f91880" : "#eef1f3", color: replySort === s ? "#fff" : "#536471", fontWeight: replySort === s ? 600 : 400, cursor: "pointer" }}>
+                  {s === "floor" ? "楼序 ↑" : s === "heat" ? "🔥 热度" : "楼序 ↓"}
+                </button>
+              ))}
+            </div>
+          </div>
+
           {loading ? (
             <div style={{ textAlign: "center", padding: 40, color: "#536471" }}>加载中...</div>
           ) : replies.length === 0 ? (
@@ -965,8 +1020,12 @@ export function PickupApp({ onClose, loginUsername }: { onClose: () => void; log
                   </button>
                 )}
                 <div style={{ display: "flex", gap: 16, marginTop: 8, fontSize: 12, color: "#8899a6" }}>
-                  <button onClick={() => alert("点赞功能开发中")} style={{ background: "none", border: "none", color: "#8899a6", cursor: "pointer", padding: 0 }}>♡ {r.likes_count}</button>
-                  <button onClick={() => { setReplyTo({ username: r.author_username, display: r.author_display }); }} style={{ background: "none", border: "none", color: "#8899a6", cursor: "pointer", padding: 0 }}>回复</button>
+                  <button
+                    onClick={() => toggleLikeReply(r.id)}
+                    disabled={likingIds.has(r.id)}
+                    style={{ background: "none", border: "none", color: likedReplyIds.has(r.id) ? "#f91880" : "#8899a6", cursor: likingIds.has(r.id) ? "default" : "pointer", padding: 0, fontWeight: likedReplyIds.has(r.id) ? 700 : 400, opacity: likingIds.has(r.id) ? 0.6 : 1 }}
+                  >{likedReplyIds.has(r.id) ? "♥" : "♡"} {r.likes_count}</button>
+                  <button onClick={() => { setView({ kind: "replyPage", post, reply: r }); loadSubReplies(r.id, 1); loadIdentity(post.id); }} style={{ background: "none", border: "none", color: "#8899a6", cursor: "pointer", padding: 0 }}>回复</button>
                   <button onClick={() => { setReportTarget({ type: "reply", id: r.id, postId: post.id, replyId: r.id, floorNo: r.floor_no }); setShowReportSheet(true); }} style={{ background: "none", border: "none", color: "#8899a6", cursor: "pointer", padding: 0 }}>举报</button>
                 </div>
               </div>
