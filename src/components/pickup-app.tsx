@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 
 // ============================================================
 // 米米请就位（pickup）演绎楼 App
@@ -202,6 +202,8 @@ export function PickupApp({ onClose, loginUsername }: { onClose: () => void; log
 
   // 回复输入
   const [replyText, setReplyText] = useState("");
+  const floorListRef = useRef<HTMLDivElement>(null);
+  const [showBackToTop, setShowBackToTop] = useState(false);
   const [replyTo, setReplyTo] = useState<{ username: string; display: string } | null>(null);
   const [subReplyText, setSubReplyText] = useState("");
 
@@ -338,6 +340,16 @@ export function PickupApp({ onClose, loginUsername }: { onClose: () => void; log
     const res = await apiGet("identity", { postId }, token);
     if (res.success) setIdentity(res.identity || null);
   }, [token]);
+
+  const handleFloorScroll = useCallback(() => {
+    const el = floorListRef.current;
+    if (!el) return;
+    setShowBackToTop(el.scrollTop > 300);
+  }, []);
+
+  const scrollToTop = useCallback(() => {
+    floorListRef.current?.scrollTo({ top: 0, behavior: "smooth" });
+  }, []);
 
   // -------- 开楼 --------
   const handleCreatePost = async () => {
@@ -929,18 +941,18 @@ export function PickupApp({ onClose, loginUsername }: { onClose: () => void; log
         </div>
 
         {/* 楼层列表 */}
-        <div style={{ flex: 1, overflowY: "auto" }}>
+        <div ref={floorListRef} onScroll={handleFloorScroll} style={{ flex: 1, overflowY: "auto", position: "relative" }}>
           {loading ? (
             <div style={{ textAlign: "center", padding: 40, color: "#536471" }}>加载中...</div>
           ) : replies.length === 0 ? (
             <div style={{ textAlign: "center", padding: 60, color: "#536471" }}>还没有人回帖，抢沙发！</div>
-          ) : replies.map((r) => (
+          ) : replies.map((r, idx) => (
             <div key={r.id} style={{ padding: "14px 16px", background: "#fff", borderBottom: "1px solid #eff3f4", display: "flex", gap: 10 }}>
               <div style={{ width: 40, height: 40, borderRadius: "50%", background: "#e7f5ff", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 20, flexShrink: 0 }}>{r.author_emoji || ""}</div>
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
                   <span style={{ fontSize: 14, fontWeight: 700, color: "#0f1419" }}>{r.author_display}</span>
-                  <span style={{ fontSize: 12, color: "#536471" }}>{r.floor_no}楼 · {timeAgo(r.created_at)}</span>
+                  <span style={{ fontSize: 12, color: "#536471" }}>{replySort === "floor" ? r.floor_no + "楼" : ((repliesPage - 1) * PER_PAGE + idx + 1) + "楼"} · {timeAgo(r.created_at)}</span>
                 </div>
                 <div style={{ fontSize: 14, color: "#0f1419", lineHeight: 1.55, marginTop: 3, whiteSpace: "pre-wrap" }}>{r.content}</div>
                 {r.sub_replies_count > 0 && (
@@ -966,6 +978,29 @@ export function PickupApp({ onClose, loginUsername }: { onClose: () => void; log
               <span style={{ color: "#f91880", fontWeight: 700 }}>{repliesPage}</span>
               {repliesPage * PER_PAGE < repliesTotal && <button onClick={() => loadReplies(post.id, repliesPage + 1)} style={{ background: "none", border: "none", color: "#1d9bf0", cursor: "pointer" }}>下一页 ›</button>}
             </div>
+          )}
+          {showBackToTop && (
+            <button
+              onClick={scrollToTop}
+              style={{
+                position: "sticky",
+                bottom: 12,
+                alignSelf: "center",
+                background: "rgba(249,24,128,0.92)",
+                color: "#fff",
+                border: "none",
+                borderRadius: 20,
+                padding: "8px 20px",
+                fontSize: 13,
+                fontWeight: 600,
+                cursor: "pointer",
+                boxShadow: "0 2px 12px rgba(249,24,128,0.35)",
+                zIndex: 10,
+                marginTop: 8
+              }}
+            >
+              ↑ 回到顶部
+            </button>
           )}
         </div>
 
