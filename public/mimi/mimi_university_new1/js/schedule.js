@@ -163,6 +163,8 @@ function removeMyScheduleRow(idx) {
     list.splice(idx, 1);
     if (!userSchedules[currentUser.name]) userSchedules[currentUser.name] = {};
     userSchedules[currentUser.name]["week"+curWeek] = list;
+    saveAll();
+    renderCalendar();
     renderMyScheduleForm();
 }
 function saveMySchedule() {
@@ -535,4 +537,4 @@ function updateDate() {
 function scrollToOutline() {
     const el = document.getElementById("dOutline");
     if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
-}
+}

@@ -518,7 +518,7 @@ function wsEnterPage() {
             })
             .finally(() => { wsBootstrapping = null; });
     }
-    wsShowDisclaimer(true);
+    wsShowDisclaimer(false);
 }
 
 function wsLeavePage() {
@@ -528,7 +528,7 @@ function wsLeavePage() {
 
 /* ========== 免责弹窗 ========== */
 function wsShowDisclaimer(forceShow) {
-    if (!forceShow && sessionStorage.getItem("ws_disclaimer_ok")) {
+    if (!forceShow && localStorage.getItem("ws_disclaimer_ok")) {
         wsRenderAll();
         return;
     }
@@ -576,7 +576,7 @@ function wsCheckDisclaimerScroll() {
 }
 
 function wsCloseDisclaimer() {
-    sessionStorage.setItem("ws_disclaimer_ok", "1");
+    localStorage.setItem("ws_disclaimer_ok", "1");
     window.removeEventListener("resize", wsCheckDisclaimerScroll);
     closeM("modalWsDisclaimer");
     wsRenderAll();

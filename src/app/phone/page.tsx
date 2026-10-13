@@ -974,7 +974,31 @@ export default function PhonePage() {
     const [adminViewMode, setAdminViewMode] = useState<"admin" | "user">("admin");
     const [authToken, setAuthToken] = useState<string | null>(null);
     const [kickedMessage, setKickedMessage] = useState<string | null>(null);
-    const [knobPos, setKnobPos] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
+    const [knobPos, setKnobPos] = useState<{ x: number; y: number }>(() => {
+        try {
+            const saved = localStorage.getItem("mimi_knob_position_v1");
+            if (saved) {
+                const p = JSON.parse(saved);
+                if (typeof p.x === "number" && typeof p.y === "number") {
+                    // 旧版本存的是"距右下偏移"（正数）；新版本用"距左上绝对像素"，需要做一次坐标转换
+                    if (typeof window !== "undefined") {
+                        const W = window.innerWidth;
+                        const H = window.innerHeight;
+                        // 旧逻辑：left = calc(100% - (48+px))  ⇒ 真实 left = W - 48 - px
+                        const x = Math.max(0, Math.min(W - 48, W - 48 - p.x));
+                        const y = Math.max(0, Math.min(H - 48, H - 48 - p.y));
+                        return { x, y };
+                    }
+                    return { x: p.x, y: p.y };
+                }
+            }
+        } catch {}
+        // 默认右下角
+        if (typeof window !== "undefined") {
+            return { x: Math.max(0, window.innerWidth - 48 - 16), y: Math.max(0, window.innerHeight - 48 - 80) };
+        }
+        return { x: 0, y: 0 };
+    });
     const [showKnobMenu, setShowKnobMenu] = useState(false);
     const [knobDragging, setKnobDragging] = useState(false);
 
@@ -982,6 +1006,7 @@ export default function PhonePage() {
     const [, ] = useState(false);
     const [showNewAdmin, setShowNewAdmin] = useState(false);
     const [externalReady, setExternalReady] = useState<{ mimi: boolean; workshop: boolean }>({ mimi: false, workshop: false });
+    const [externalEverOpened, setExternalEverOpened] = useState<{ mimi: boolean; workshop: boolean }>({ mimi: false, workshop: false });
 
     const [adminRole, setAdminRole] = useState<'super_admin' | 'review_admin' | 'ops_admin'>('super_admin');
 
@@ -1268,18 +1293,7 @@ export default function PhonePage() {
         } catch {}
     }, []);
 
-    // 加载悬浮旋钮位置
-    useEffect(() => {
-        try {
-            const saved = localStorage.getItem("mimi_knob_position_v1");
-            if (saved) {
-                const parsed = JSON.parse(saved);
-                if (typeof parsed.x === "number" && typeof parsed.y === "number") {
-                    setKnobPos(parsed);
-                }
-            }
-        } catch {}
-    }, []);
+
 
     // 加载悬浮旋钮样式
     useEffect(() => {
@@ -1451,13 +1465,24 @@ export default function PhonePage() {
         setKnobPos({ x: knobDragStart.current.posX + dx, y: knobDragStart.current.posY + dy });
     }, [knobDragging]);
 
+    const clampKnobPos = (p: { x: number; y: number }) => {
+        if (typeof window === "undefined") return p;
+        const W = window.innerWidth;
+        const H = window.innerHeight;
+        return {
+            x: Math.max(0, Math.min(W - 48, p.x)),
+            y: Math.max(0, Math.min(H - 48, p.y)),
+        };
+    };
     const handleKnobPointerUp = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
         setKnobDragging(false);
         if (knobRef.current) {
             knobRef.current.releasePointerCapture(e.pointerId);
         }
         try {
-            localStorage.setItem("mimi_knob_position_v1", JSON.stringify(knobPos));
+            const clamped = clampKnobPos(knobPos);
+            setKnobPos(clamped);
+            localStorage.setItem("mimi_knob_position_v1", JSON.stringify(clamped));
         } catch {}
     }, [knobPos]);
 
@@ -8525,7 +8550,17 @@ export default function PhonePage() {
         const isMimi = currentApp === "mimicosmo";
         const isWorkshop = currentApp === "miniworkshop";
         const active = isMimi || isWorkshop;
-                const token = typeof window !== "undefined" ? localStorage.getItem("auth_token") || "" : "";
+        // 懒加载 + 保留：只在首次进入时创建 iframe，之后保留不销毁（保留状态）
+        const shouldMountMimi = isMimi && !externalEverOpened.mimi;
+        const shouldMountWorkshop = isWorkshop && !externalEverOpened.workshop;
+        if (shouldMountMimi || shouldMountWorkshop) {
+            setExternalEverOpened((prev) => ({
+                ...prev,
+                ...(shouldMountMimi ? { mimi: true } : {}),
+                ...(shouldMountWorkshop ? { workshop: true } : {})
+            }));
+        }
+        const token = typeof window !== "undefined" ? localStorage.getItem("auth_token") || "" : "";
         const role = isAdmin ? "admin" : "user";
         const urlMimi = `/mimi/mimi_university_new1/index.html?hideWorkshop=true&token=${encodeURIComponent(token)}&username=${encodeURIComponent(loginUsername)}&role=${role}`;
         const urlWorkshop = `/mimi/mimi_university_new1/index.html?workshopOnly=true&token=${encodeURIComponent(token)}&username=${encodeURIComponent(loginUsername)}&role=${role}`;
@@ -8569,6 +8604,7 @@ export default function PhonePage() {
                         }}>
                         ←
                     </button>
+                    {externalEverOpened.mimi && (
                     <iframe
                         className="external-app-cache-iframe"
                         src={urlMimi}
@@ -8584,6 +8620,8 @@ export default function PhonePage() {
                             pointerEvents: isMimi ? "auto" : "none"
                         }}
                     />
+                    )}
+                    {externalEverOpened.workshop && (
                     <iframe
                         className="external-app-cache-iframe"
                         src={urlWorkshop}
@@ -8599,12 +8637,13 @@ export default function PhonePage() {
                             pointerEvents: isWorkshop ? "auto" : "none"
                         }}
                     />
+                    )}
                     {active && (
                         <div style={{
                             position: "absolute", inset: 0, display: "flex",
                             flexDirection: "column", alignItems: "center", justifyContent: "center",
                             gap: 12, background: "#fbfaf8", zIndex: 40,
-                            visibility: (isMimi && !externalReady.mimi) || (isWorkshop && !externalReady.workshop) ? "visible" : "hidden"
+                            visibility: (isMimi && (!externalEverOpened.mimi || !externalReady.mimi)) || (isWorkshop && (!externalEverOpened.workshop || !externalReady.workshop)) ? "visible" : "hidden"
                         }}>
                             <div style={{ fontSize: 34 }}>🌿</div>
                             <div style={{ fontSize: 13, color: "#5a9e6a" }}>加载中...</div>
@@ -10866,11 +10905,8 @@ export default function PhonePage() {
                         onClick={handleKnobClick}
                         style={{
                             position: "absolute",
-                            right: knobPos.x === 0 ? 16 : undefined,
-                            bottom: knobPos.y === 0 ? 80 : undefined,
-                            transform: `translate(${knobPos.x === 0 ? 0 : -knobPos.x}px, ${knobPos.y === 0 ? 0 : -knobPos.y}px)`,
-                            left: knobPos.x !== 0 ? `calc(100% - ${48 + knobPos.x}px)` : undefined,
-                            top: knobPos.y !== 0 ? `calc(100% - ${48 + knobPos.y}px)` : undefined,
+                            left: `${knobPos.x}px`,
+                            top: `${knobPos.y}px`,
                             width: 48,
                             height: 48,
                             borderRadius: "50%",
