@@ -92,7 +92,7 @@ interface Notification {
 
 const NOTIF_ICON: Record<string, string> = {
   reply: '💬', mention: '@', report_result: '⚖️',
-  admin_action: '🛡️', system_announce: '📢', admin_custom: '✉️', version: '🎉', like_reply: '❤️',
+  admin_action: '🛡️', system_announce: '📢', admin_custom: '✉️', version: '🎉', like_reply: '❤️', like_post: '❤️',
 };
 
 const NOTIF_API = "/api/notifications";
@@ -205,9 +205,12 @@ export function PickupApp({ onClose, loginUsername }: { onClose: () => void; log
   const floorListRef = useRef<HTMLDivElement>(null);
   const [likedReplyIds, setLikedReplyIds] = useState<Set<string>>(new Set());
   const [likingIds, setLikingIds] = useState<Set<string>>(new Set());
+  const [likedPostIds, setLikedPostIds] = useState<Set<string>>(new Set());
+  const [likingPostIds, setLikingPostIds] = useState<Set<string>>(new Set());
   const [showBackToTop, setShowBackToTop] = useState(false);
   const [replyTo, setReplyTo] = useState<{ username: string; display: string } | null>(null);
   const [subReplyText, setSubReplyText] = useState("");
+  const [, setPendingSubReplyText] = useState("");
 
   // 开楼
   const [newTitle, setNewTitle] = useState("");
@@ -274,6 +277,9 @@ export function PickupApp({ onClose, loginUsername }: { onClose: () => void; log
         setPosts(res.posts || []);
         setPostsTotal(res.total || 0);
         setPostsPage(page);
+        if (Array.isArray(res.likedPostIds)) {
+          setLikedPostIds(new Set(res.likedPostIds as string[]));
+        }
       }
     } finally {
       setLoading(false);
@@ -301,6 +307,11 @@ export function PickupApp({ onClose, loginUsername }: { onClose: () => void; log
           });
           return merged;
         });
+        if (res.likedPost === true) {
+          setLikedPostIds((prev) => new Set(prev).add(postId));
+        } else if (res.likedPost === false) {
+          setLikedPostIds((prev) => { const n = new Set(prev); n.delete(postId); return n; });
+        }
       }
     } finally {
       setLoading(false);
@@ -396,6 +407,54 @@ export function PickupApp({ onClose, loginUsername }: { onClose: () => void; log
     }
   };
 
+  const toggleLikePost = async (post: any) => {
+    if (likingPostIds.has(post.id)) return;
+    setLikingPostIds((prev) => new Set(prev).add(post.id));
+    const wasLiked = likedPostIds.has(post.id);
+    const delta = wasLiked ? -1 : 1;
+    setLikedPostIds((prev) => {
+      const next = new Set(prev);
+      if (wasLiked) next.delete(post.id); else next.add(post.id);
+      return next;
+    });
+    setPosts((prev) => prev.map((p) => p.id === post.id
+      ? { ...p, likes_count: Math.max(0, (p.likes_count || 0) + delta) } : p));
+    if (view.kind === 'post' && view.post.id === post.id) {
+      setView({ ...view, post: { ...view.post, likes_count: Math.max(0, (view.post.likes_count || 0) + delta) } });
+    }
+    try {
+      const res = await apiPost({ action: "like_post", token, postId: post.id });
+      if (res.success) {
+        setLikedPostIds((prev) => {
+          const next = new Set(prev);
+          if (res.liked) next.add(post.id); else next.delete(post.id);
+          return next;
+        });
+        setPosts((prev) => prev.map((p) => p.id === post.id
+          ? { ...p, likes_count: res.likesCount ?? p.likes_count } : p));
+        if (view.kind === 'post' && view.post.id === post.id) {
+          setView({ ...view, post: { ...view.post, likes_count: res.likesCount ?? view.post.likes_count } });
+        }
+      } else {
+        setLikedPostIds((prev) => {
+          const next = new Set(prev);
+          if (wasLiked) next.add(post.id); else next.delete(post.id);
+          return next;
+        });
+        setPosts((prev) => prev.map((p) => p.id === post.id
+          ? { ...p, likes_count: Math.max(0, (p.likes_count || 0) - delta) } : p));
+        if (view.kind === 'post' && view.post.id === post.id) {
+          setView({ ...view, post: { ...view.post, likes_count: Math.max(0, (view.post.likes_count || 0) - delta) } });
+        }
+        alert(res.error || "操作失败");
+      }
+    } catch {
+      alert("网络错误，请重试");
+    } finally {
+      setLikingPostIds((prev) => { const n = new Set(prev); n.delete(post.id); return n; });
+    }
+  };
+
   const handleFloorScroll = useCallback(() => {
     const el = floorListRef.current;
     if (!el) return;
@@ -475,18 +534,23 @@ export function PickupApp({ onClose, loginUsername }: { onClose: () => void; log
 
   const handleConfirmIdentity = async () => {
     const name = useAccountName ? user.name : pendingIdentityName.trim();
-    const emoji = useAccountName ? ((user.emoji || "🐰")) : pendingIdentityEmoji;
+    const emoji = useAccountName ? ((user.emoji || "")) : pendingIdentityEmoji;
     if (!useAccountName && (!name || name.length < 2)) {
       return alert("角色名至少 2 字");
     }
     setShowIdentitySheet(false);
     setPendingReplyText("");
     setPendingIdentityName("");
-    await handleReply(name, emoji);
+    // 根据当前视图类型决定重试哪个发送函数
+    if (view.kind === "post") {
+      await handleReply(name, emoji);
+    } else if (view.kind === "replyPage") {
+      await handleSubReply(name, emoji);
+    }
   };
 
   // -------- 子回复 --------
-  const handleSubReply = async () => {
+  const handleSubReply = async (forceIdentityName?: string, forceEmoji?: string) => {
     if (!(view.kind === "replyPage")) return;
     if (!subReplyText.trim()) return;
     setLoading(true);
@@ -500,13 +564,17 @@ export function PickupApp({ onClose, loginUsername }: { onClose: () => void; log
         replyToUsername: replyTo?.username,
         replyToDisplay: replyTo?.display,
         identityMode: useHostIdentity ? "host" : undefined,
+        identityName: forceIdentityName,
+        identityEmoji: forceEmoji,
       });
       if (res.success) {
         setSubReplyText("");
         setReplyTo(null);
         loadSubReplies(view.reply.id, 1);
       } else if (res.error && res.error.includes("演绎身份")) {
-        alert(res.error);
+        // 弹出身份设置框（和楼层回复一样）
+        setPendingSubReplyText(subReplyText);
+        setShowIdentitySheet(true);
       } else {
         alert(res.error);
       }
@@ -717,7 +785,7 @@ export function PickupApp({ onClose, loginUsername }: { onClose: () => void; log
                   <div style={{ fontSize: 11, color: "#8899a6", marginTop: 1 }}>{timeAgo(p.created_at)}</div>
                 </div>
                 <div style={{ display: "flex", gap: 16, fontSize: 12, color: "#8899a6", flexShrink: 0 }}>
-                  <span>♡ {p.likes_count}</span>
+                  <button onClick={(e) => { e.stopPropagation(); toggleLikePost(p); }} style={{ background: "none", border: "none", color: likedPostIds.has(p.id) ? "#f91880" : "#8899a6", cursor: likingPostIds.has(p.id) ? "default" : "pointer", fontWeight: likedPostIds.has(p.id) ? 700 : 400, padding: 0, opacity: likingPostIds.has(p.id) ? 0.6 : 1 }}>{likedPostIds.has(p.id) ? "♥" : "♡"} {p.likes_count}</button>
                   <span>💬 {p.replies_count}</span>
                 </div>
               </div>
@@ -978,10 +1046,13 @@ export function PickupApp({ onClose, loginUsername }: { onClose: () => void; log
             </div>
             <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 12, paddingTop: 10, borderTop: "1px solid #f5f8fa" }}>
               <div style={{ width: 32, height: 32, borderRadius: "50%", background: "#ffe4ec", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16 }}>{post.owner_emoji || "🐰"}</div>
-              <div>
+              <div style={{ flex: 1 }}>
                 <div style={{ fontSize: 13, fontWeight: 700 }}>{post.host_label || post.owner_display} <span style={{ background: "#f91880", color: "#fff", fontSize: 10, padding: "1px 6px", borderRadius: 4, fontWeight: 600 }}>楼主</span></div>
                 <div style={{ fontSize: 11, color: "#8899a6" }}>{timeAgo(post.created_at)}</div>
               </div>
+              <button onClick={() => toggleLikePost(post)} style={{ background: "none", border: "none", color: likedPostIds.has(post.id) ? "#f91880" : "#8899a6", cursor: likingPostIds.has(post.id) ? "default" : "pointer", fontWeight: likedPostIds.has(post.id) ? 700 : 400, opacity: likingPostIds.has(post.id) ? 0.6 : 1, fontSize: 13, padding: "6px 10px" }}>
+                {likedPostIds.has(post.id) ? "♥" : "♡"} {post.likes_count || 0}
+              </button>
             </div>
           </div>
 
@@ -1241,7 +1312,7 @@ export function PickupApp({ onClose, loginUsername }: { onClose: () => void; log
             placeholder={replyTo ? `回复 ${replyTo.display}...` : `回复 ${reply.floor_no}楼...`}
             style={{ flex: 1, background: "#eef1f3", border: "none", borderRadius: 18, height: 38, padding: "0 14px", fontSize: 13, outline: "none" }}
           />
-          <button onClick={handleSubReply} disabled={loading || !subReplyText.trim()} style={{ width: 38, height: 38, borderRadius: "50%", background: "#f91880", color: "#fff", border: "none", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16, cursor: "pointer", opacity: loading || !subReplyText.trim() ? 0.5 : 1 }}>↑</button>
+          <button onClick={() => handleSubReply()} disabled={loading || !subReplyText.trim()} style={{ width: 38, height: 38, borderRadius: "50%", background: "#f91880", color: "#fff", border: "none", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16, cursor: "pointer", opacity: loading || !subReplyText.trim() ? 0.5 : 1 }}>↑</button>
         </div>
 
         {/* 举报弹层（复用） */}

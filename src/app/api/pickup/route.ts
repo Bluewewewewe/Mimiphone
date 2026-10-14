@@ -157,7 +157,19 @@ export async function GET(request: NextRequest) {
           ...p,
           pickup_tags: (p.tag_ids || []).map((id: string) => tagMap.get(id) || { id, name: id }),
         }));
-        return NextResponse.json({ success: true, posts, total: count || 0, page });
+
+        let likedPostIds: string[] = [];
+        if (viewerId && posts.length > 0) {
+          const postIds = posts.map((p: any) => p.id);
+          const { data: pl } = await supabase
+            .from("pickup_post_likes")
+            .select("post_id")
+            .eq("user_id", viewerId)
+            .in("post_id", postIds);
+          likedPostIds = (pl || []).map((l: any) => l.post_id);
+        }
+
+        return NextResponse.json({ success: true, posts, total: count || 0, page, likedPostIds });
       }
 
       case "get": {
@@ -186,7 +198,17 @@ export async function GET(request: NextRequest) {
             return NextResponse.json({ success: false, error: "帖子不存在" }, { status: 404 });
           }
         }
-        return NextResponse.json({ success: true, post: found });
+        let likedPost = false;
+        if (viewerId) {
+          const { data: pl } = await supabase
+            .from("pickup_post_likes")
+            .select("id")
+            .eq("user_id", viewerId)
+            .eq("post_id", postId)
+            .maybeSingle();
+          likedPost = !!pl;
+        }
+        return NextResponse.json({ success: true, post: found, likedPost });
       }
 
       case "replies": {
@@ -221,7 +243,18 @@ export async function GET(request: NextRequest) {
           likedReplyIds = (likes || []).map((l: any) => l.reply_id);
         }
 
-        return NextResponse.json({ success: true, replies: data || [], total: count || 0, page, likedReplyIds });
+        let likedPost: boolean | null = null;
+        if (viewerId) {
+          const { data: pl } = await supabase
+            .from("pickup_post_likes")
+            .select("id")
+            .eq("user_id", viewerId)
+            .eq("post_id", postId)
+            .maybeSingle();
+          likedPost = !!pl;
+        }
+
+        return NextResponse.json({ success: true, replies: data || [], total: count || 0, page, likedReplyIds, likedPost });
       }
 
       case "sub_replies": {
@@ -753,6 +786,66 @@ export async function POST(request: NextRequest) {
           .single();
         if (error) throw error;
         return NextResponse.json({ success: true, tag: data, pending: true });
+      }
+
+      case "like_post": {
+        const postId = body.postId;
+        if (!postId) return badRequest("缺少 postId");
+
+        const { data: post, error: pErr } = await supabase
+          .from("pickup_posts")
+          .select("id, owner_id, title, status")
+          .eq("id", postId)
+          .single();
+        if (pErr || !post) return badRequest("帖子不存在");
+        if (post.status !== "active") return badRequest("帖子不可用");
+
+        const { data: exist } = await supabase
+          .from("pickup_post_likes")
+          .select("id")
+          .eq("user_id", user.id)
+          .eq("post_id", postId)
+          .maybeSingle();
+
+        let liked: boolean;
+        if (exist) {
+          await supabase.from("pickup_post_likes").delete().eq("id", exist.id);
+          const { data: beforeDec } = await supabase
+            .from("pickup_posts").select("likes_count").eq("id", postId).single();
+          await supabase.from("pickup_posts")
+            .update({ likes_count: Math.max(0, (beforeDec?.likes_count ?? 1) - 1) })
+            .eq("id", postId);
+          liked = false;
+        } else {
+          const { error: insErr } = await supabase
+            .from("pickup_post_likes")
+            .insert({ post_id: postId, user_id: user.id });
+          if (insErr) {
+            liked = true;
+          } else {
+            const { data: beforeInc } = await supabase
+              .from("pickup_posts").select("likes_count").eq("id", postId).single();
+            await supabase.from("pickup_posts")
+              .update({ likes_count: (beforeInc?.likes_count ?? 0) + 1 })
+              .eq("id", postId);
+            liked = true;
+            if (post.owner_id && post.owner_id !== user.id) {
+              insertNotification({
+                userId: post.owner_id,
+                type: "like_post",
+                title: `${user.username} 赞了你的帖子`,
+                content: (post.title || "").slice(0, 30),
+                relatedPostId: postId,
+                extra: { fromName: user.username },
+              });
+            }
+          }
+        }
+
+        const { data: updated } = await supabase
+          .from("pickup_posts").select("likes_count").eq("id", postId).single();
+
+        return NextResponse.json({ success: true, liked, likesCount: updated?.likes_count ?? 0 });
       }
 
       case "like_reply": {
