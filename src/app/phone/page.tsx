@@ -8498,10 +8498,12 @@ export default function PhonePage() {
                             {item("🛠️", "管理后台", () => setShowNewAdmin(true))}
                             {item("📲", "应用管理", () => setCurrentApp("app-admin"))}
                             {item("🖼️", "相册管理", () => setCurrentApp("gallery-admin"))}
+                            {item("📋", "发布更新日志", () => setMeSubPage("version-admin"))}
                         </>
                     )}
 
                     <div className="me-group-label">关于</div>
+                    {item("📜", "更新日志", () => setMeSubPage("changelog"))}
                     {item("ℹ️", "关于米米宇宙", () => setMeSubPage("about"))}
                     {item("🚪", "退出登录", handleLogout)}
                 </div>

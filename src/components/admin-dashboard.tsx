@@ -8,6 +8,7 @@ import ReviewQueue from "./admin/review-queue";
 import { AdminPermissions } from "./admin/admin-permissions";
 import { AdminAuditLog } from "./admin/admin-audit-log";
 import { AdminRedeem } from "./admin/admin-redeem";
+import AdminChangelog from "./admin/admin-changelog";
 
 interface AdminDashboardProps {
   token: string;
@@ -15,7 +16,7 @@ interface AdminDashboardProps {
   onClose: () => void;
 }
 
-type Tab = "overview" | "users" | "tree" | "review" | "invites" | "redeem" | "forum" | "announce" | "bugs" | "permissions" | "audit_log" | "settings";
+type Tab = "overview" | "users" | "tree" | "review" | "invites" | "redeem" | "forum" | "announce" | "bugs" | "changelog" | "permissions" | "audit_log" | "settings";
 
 interface InviteCode {
   code: string;
@@ -173,6 +174,7 @@ export default function AdminDashboard({ token,  onClose }: AdminDashboardProps)
     { id: "redeem", label: "兑换码管理", icon: "🎁", permission: "__super_only__" },
     { id: "forum", label: "论坛管理", icon: "📋", permission: "forum_manage" },
     { id: "announce", label: "官方公告", icon: "📢", permission: "forum_manage" },
+    { id: "changelog", label: "更新日志", icon: "📋", permission: "forum_manage" },
     { id: "bugs", label: "Bug反馈", icon: "🐛", permission: "forum_manage" },
     { id: "permissions", label: "权限管理", icon: "🔐", permission: "permissions" },
     { id: "audit_log", label: "操作日志", icon: "📜", permission: "audit_log" },
@@ -336,6 +338,7 @@ export default function AdminDashboard({ token,  onClose }: AdminDashboardProps)
       case "redeem": return <AdminRedeem token={token} />;
       case "forum": return renderForum();
       case "announce": return renderAnnounce();
+      case "changelog": return <AdminChangelog token={token} />;
       case "bugs": return renderBugs();
       case "permissions": return (
         <AdminPermissions token={token} currentUserRole={currentUserRole} currentUserId={currentAdminId || ""} />
