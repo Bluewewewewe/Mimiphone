@@ -34,6 +34,8 @@ import {
 
 import { ForumApp } from "@/components/forum-app";
 import { PickupApp } from "@/components/pickup-app";
+import { GalleryApp } from "@/components/gallery-app";
+import { GalleryAdmin } from "@/components/gallery-admin";
 import { VersionUpdateToast } from "@/components/version-update-toast";
 import { AdminApp } from "@/components/admin-app";
 import { InviteApp } from "@/components/invite-app";
@@ -540,6 +542,11 @@ const FIRST_PAGE_APPS: AppItem[] = [{
     emoji: "🎭",
     label: "米米请就位",
     color: "#f91880"
+}, {
+    id: "gallery",
+    emoji: "🖼️",
+    label: "米米相册",
+    color: "#0ea5e9"
 }, {
     id: "lpmi",
     emoji: "🌽",
@@ -8480,6 +8487,7 @@ export default function PhonePage() {
                             {item("✅", "用户审核", () => setCurrentApp("admin-review"))}
                             {item("🛠️", "管理后台", () => setShowNewAdmin(true))}
                             {item("📲", "应用管理", () => setCurrentApp("app-admin"))}
+                            {item("🖼️", "相册管理", () => setCurrentApp("gallery-admin"))}
                         </>
                     )}
 
@@ -9780,6 +9788,10 @@ export default function PhonePage() {
             return null;
         case "pickup":
             return renderPickup();
+        case "gallery":
+            return <GalleryApp onClose={() => setCurrentApp(null)} loginUsername={loginUsername} />;
+        case "gallery-admin":
+            return <GalleryAdmin onClose={() => { setCurrentApp("me"); setMeSubPage("main"); }} loginUsername={loginUsername} />;
         case "forum":
             return renderForum();
         case "user-profile":

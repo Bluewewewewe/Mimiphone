@@ -118,7 +118,8 @@ export type AdminPermission =
     | "review_queue"
     | "permissions"
     | "audit_log"
-    | "app_manage";
+    | "app_manage"
+    | "gallery_manage";
 
 const ROLE_PERMISSIONS: Record<string, AdminPermission[]> = {
     super_admin: [
@@ -136,6 +137,7 @@ const ROLE_PERMISSIONS: Record<string, AdminPermission[]> = {
         "permissions",
         "audit_log",
         "app_manage",
+        "gallery_manage",
     ],
     admin: ["user_review", "user_ban", "user_manage", "invite_manage", "forum_manage", "pickup_manage", "schedule_manage", "stats_view", "tree_view", "review_queue", "audit_log"],
 };
