@@ -6,8 +6,8 @@ interface VersionData {
   title: string;
   content: string;
   type: "feature" | "fix" | "announce";
-  popupText?: string;
-  publishedAt: string;
+  popup_text?: string;
+  published_at: string;
 }
 
 const TYPE_ICON: Record<string, string> = {
@@ -42,7 +42,7 @@ export function VersionPopup({ onOpenChangelog }: { onOpenChangelog: () => void 
 
   if (!show || !data) return null;
 
-  const displayText = data.popupText || (data.content.length > 100 ? data.content.slice(0, 100) + "..." : data.content);
+  const displayText = data.popup_text || (data.content.length > 100 ? data.content.slice(0, 100) + "..." : data.content);
 
   return (
     <div

@@ -6,7 +6,7 @@ interface Version {
   title: string;
   content: string;
   type: string;
-  publishedAt: string;
+  published_at: string;
 }
 
 const typeColor: Record<string, string> = { feature: "#16a34a", fix: "#ea580c", announce: "#2563eb" };
@@ -56,7 +56,7 @@ export function ChangelogContent() {
             {v.version === seen && <span style={{ fontSize: 10, color: "#d97706" }}>● 当前版本</span>}
           </div>
           <div style={{ fontSize: 15, fontWeight: 600, color: "#333" }}>{v.title}</div>
-          <div style={{ fontSize: 11, color: "#999", marginTop: 2 }}>{new Date(v.publishedAt).toLocaleDateString("zh-CN")}</div>
+          <div style={{ fontSize: 11, color: "#999", marginTop: 2 }}>{new Date(v.published_at).toLocaleDateString("zh-CN")}</div>
           {expanded === v.version && (
             <div style={{ fontSize: 13, color: "#555", lineHeight: 1.7, marginTop: 8, whiteSpace: "pre-wrap" }}>{v.content}</div>
           )}

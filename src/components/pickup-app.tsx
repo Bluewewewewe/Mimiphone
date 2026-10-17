@@ -261,6 +261,16 @@ export function PickupApp({ onClose, loginUsername }: { onClose: () => void; log
   const [notifSendTitle, setNotifSendTitle] = useState("");
   const [notifSendContent, setNotifSendContent] = useState("");
   const [notifSendType, setNotifSendType] = useState("admin_custom");
+  // 发更新日志（版本弹窗）
+  const [showVersionSend, setShowVersionSend] = useState(false);
+  const [verVersion, setVerVersion] = useState("");
+  const [verTitle, setVerTitle] = useState("");
+  const [verContent, setVerContent] = useState("");
+  const [verPopupText, setVerPopupText] = useState("");
+  const [verType, setVerType] = useState("feature");
+  const [verShowPopup, setVerShowPopup] = useState(true);
+  const [verSending, setVerSending] = useState(false);
+  const [verErr, setVerErr] = useState("");
   // TODO: 暂时用空列表判断管理员，后续从后端 user.isAdmin 获取
   const ADMIN_USERNAMES: string[] = [];
   const isAdmin = user.isAdmin || ADMIN_USERNAMES.includes(user.username);
@@ -702,6 +712,45 @@ export function PickupApp({ onClose, loginUsername }: { onClose: () => void; log
       loadNotifs(1);
     } else {
       alert(res.error || "发送失败");
+    }
+  };
+
+  const openVersionSend = () => {
+    // 默认版本号 = 当天日期 YYYYMMDD + 01
+    const d = new Date();
+    const ymd = `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, "0")}${String(d.getDate()).padStart(2, "0")}`;
+    setVerVersion(ymd + "01");
+    setVerTitle(""); setVerContent(""); setVerPopupText("");
+    setVerType("feature"); setVerShowPopup(true); setVerErr("");
+    setShowVersionSend(true);
+  };
+
+  const handleCreateVersion = async () => {
+    setVerErr("");
+    if (!verVersion.trim()) return setVerErr("请填写版本号");
+    if (!verTitle.trim()) return setVerErr("请填写标题");
+    if (!verContent.trim()) return setVerErr("请填写更新内容");
+    setVerSending(true);
+    try {
+      const res = await notifPost({
+        action: "admin_create_version",
+        version: verVersion.trim(),
+        title: verTitle.trim(),
+        content: verContent.trim(),
+        type: verType,
+        showInPopup: verShowPopup,
+        popupText: verPopupText.trim() || null,
+      }, token);
+      if (res.success) {
+        alert("更新日志已发布，用户下次打开会看到弹窗");
+        setShowVersionSend(false);
+      } else {
+        setVerErr(res.error || "发布失败");
+      }
+    } catch {
+      setVerErr("网络错误，发布失败");
+    } finally {
+      setVerSending(false);
     }
   };
 
@@ -1348,6 +1397,7 @@ export function PickupApp({ onClose, loginUsername }: { onClose: () => void; log
           <div style={{ flex: 1, fontSize: 16, fontWeight: 700 }}>通知中心</div>
           <button onClick={handleMarkAllRead} style={{ fontSize: 12, color: "#1d9bf0", background: "none", border: "none", cursor: "pointer" }}>全部已读</button>
           {isAdmin && <button onClick={() => setShowNotifSend(true)} style={{ fontSize: 12, color: "#f91880", background: "#fff0f6", border: "none", borderRadius: 12, padding: "4px 10px", fontWeight: 600, cursor: "pointer" }}>📢 发通知</button>}
+          {isAdmin && <button onClick={openVersionSend} style={{ fontSize: 12, color: "#d97706", background: "#fffbeb", border: "none", borderRadius: 12, padding: "4px 10px", fontWeight: 600, cursor: "pointer" }}>📋 发版</button>}
         </div>
 
         {/* Tab 切换 */}
@@ -1427,6 +1477,51 @@ export function PickupApp({ onClose, loginUsername }: { onClose: () => void; log
               <div style={{ display: "flex", gap: 10 }}>
                 <button onClick={() => setShowNotifSend(false)} style={{ flex: 1, padding: 12, borderRadius: 20, border: "1px solid #eff3f4", background: "#fff", fontSize: 14, cursor: "pointer" }}>取消</button>
                 <button onClick={handleAdminSend} style={{ flex: 1, padding: 12, borderRadius: 20, border: "none", background: "#f91880", color: "#fff", fontSize: 14, fontWeight: 600, cursor: "pointer" }}>发送</button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* 管理员发更新日志（版本弹窗） */}
+        {showVersionSend && (
+          <div style={{ position: "absolute", inset: 0, background: "rgba(0,0,0,.3)", zIndex: 100, display: "flex", flexDirection: "column" }}>
+            <div style={{ background: "#fff", borderRadius: "16px 16px 0 0", marginTop: "auto", padding: 20, maxHeight: "88%", overflowY: "auto" }}>
+              <div style={{ fontSize: 16, fontWeight: 700, marginBottom: 4 }}>📋 发布更新日志</div>
+              <div style={{ fontSize: 12, color: "#8899a6", marginBottom: 12 }}>发布后全员下次打开会看到弹窗，历史保存在「设置 → 更新日志」</div>
+
+              <div style={{ fontSize: 12, color: "#536471", marginBottom: 6 }}>版本号（同一天发多次就把末尾 01 改成 02）</div>
+              <input value={verVersion} onChange={(e) => setVerVersion(e.target.value)} placeholder="如 2026101701" inputMode="numeric"
+                style={{ width: "100%", border: "1px solid #eff3f4", borderRadius: 10, padding: "10px 12px", fontSize: 13, outline: "none", marginBottom: 12, boxSizing: "border-box" }} />
+
+              <div style={{ fontSize: 12, color: "#536471", marginBottom: 6 }}>标题</div>
+              <input value={verTitle} onChange={(e) => setVerTitle(e.target.value)} placeholder="如 📸 米米相册开张啦" maxLength={50}
+                style={{ width: "100%", border: "1px solid #eff3f4", borderRadius: 10, padding: "10px 12px", fontSize: 13, outline: "none", marginBottom: 12, boxSizing: "border-box" }} />
+
+              <div style={{ fontSize: 12, color: "#536471", marginBottom: 6 }}>弹窗一句话（留空则自动截取内容开头）</div>
+              <input value={verPopupText} onChange={(e) => setVerPopupText(e.target.value)} placeholder="弹窗里给用户看的简短介绍" maxLength={100}
+                style={{ width: "100%", border: "1px solid #eff3f4", borderRadius: 10, padding: "10px 12px", fontSize: 13, outline: "none", marginBottom: 12, boxSizing: "border-box" }} />
+
+              <div style={{ fontSize: 12, color: "#536471", marginBottom: 6 }}>完整更新内容（支持换行，会显示在更新日志历史里）</div>
+              <textarea value={verContent} onChange={(e) => setVerContent(e.target.value)} placeholder={"这次更新了什么？\n\n📸 新功能\n· ..."}
+                style={{ width: "100%", border: "1px solid #eff3f4", borderRadius: 10, padding: "10px 12px", fontSize: 13, outline: "none", minHeight: 140, resize: "vertical", boxSizing: "border-box", marginBottom: 12 }} />
+
+              <div style={{ fontSize: 12, color: "#536471", marginBottom: 6 }}>类型</div>
+              <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 12 }}>
+                {[["feature", "🆕 新功能"], ["fix", "🐛 修复"], ["announce", "📢 公告"]].map(([val, label]) => (
+                  <button key={val} onClick={() => setVerType(val)} style={{ fontSize: 12, padding: "6px 12px", borderRadius: 12, border: "none", background: verType === val ? "#d97706" : "#eef1f3", color: verType === val ? "#fff" : "#536471", fontWeight: verType === val ? 600 : 400, cursor: "pointer" }}>{label}</button>
+                ))}
+              </div>
+
+              <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, color: "#536471", marginBottom: verErr ? 8 : 16 }}>
+                <input type="checkbox" checked={verShowPopup} onChange={(e) => setVerShowPopup(e.target.checked)} />
+                发布后向全体用户弹出更新提示
+              </label>
+
+              {verErr && <div style={{ background: "#fef2f2", color: "#dc2626", fontSize: 12, borderRadius: 8, padding: "8px 10px", marginBottom: 12 }}>{verErr}</div>}
+
+              <div style={{ display: "flex", gap: 10 }}>
+                <button onClick={() => setShowVersionSend(false)} disabled={verSending} style={{ flex: 1, padding: 12, borderRadius: 20, border: "1px solid #eff3f4", background: "#fff", fontSize: 14, cursor: "pointer" }}>取消</button>
+                <button onClick={handleCreateVersion} disabled={verSending} style={{ flex: 1, padding: 12, borderRadius: 20, border: "none", background: "#d97706", color: "#fff", fontSize: 14, fontWeight: 600, cursor: "pointer", opacity: verSending ? 0.6 : 1 }}>{verSending ? "发布中..." : "发布"}</button>
               </div>
             </div>
           </div>
