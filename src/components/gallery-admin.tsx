@@ -118,25 +118,41 @@ export function GalleryAdmin({ onClose }: { onClose: () => void; loginUsername: 
     }
   }
 
-  async function onPickFiles(files: FileList | null) {
-    if (!files || files.length === 0 || !currentAlbumId) return;
+  async function onPickFiles(picked: FileList | null) {
+    if (!picked || picked.length === 0 || !currentAlbumId) return;
     setUploading(true);
-    setUploadMsg(`上传 0/${files.length}`);
+    setError("");
+    const total = picked.length;
+    setUploadMsg(`准备 0/${total}`);
     try {
-      // 分批，每批 6 张，避免请求太大
+      // 重建为安全文件名（iOS HEIC 在选图时已被系统自动转 JPEG）
+      const allFiles: File[] = [];
+      for (let i = 0; i < total; i++) {
+        const f = picked[i];
+        if (!f.type.startsWith("image/") || f.size === 0) {
+          throw new Error(`第 ${i + 1} 张图片无效（可能 iCloud 原图还没下载下来，先在相册里点开加载完再选）`);
+        }
+        const ext = ({ "image/jpeg": "jpg", "image/png": "png", "image/webp": "webp", "image/gif": "gif" } as Record<string, string>)[f.type] || "jpg";
+        const buf = await f.arrayBuffer();
+        const safe = new File([buf], `upload_${Date.now()}_${i}.${ext}`, { type: f.type });
+        (safe as File & { originalName?: string }).originalName = f.name;
+        allFiles.push(safe);
+      }
+      // 分批，每批 6 张
       const batch = 6;
-      for (let i = 0; i < files.length; i += batch) {
-        const chunk = Array.from(files).slice(i, i + batch);
+      for (let i = 0; i < allFiles.length; i += batch) {
+        const chunk = allFiles.slice(i, i + batch);
         const fd = new FormData();
         fd.append("albumId", currentAlbumId);
         chunk.forEach((f) => fd.append("files", f));
-        setUploadMsg(`上传 ${i + 1}-${Math.min(i + batch, files.length)}/${files.length}`);
+        fd.append("names", JSON.stringify(chunk.map((f) => (f as File & { originalName?: string }).originalName || f.name)));
+        setUploadMsg(`上传 ${i + 1}-${Math.min(i + batch, total)}/${total}`);
         const res = await fetch("/api/admin/gallery", {
           method: "POST",
           headers: { Authorization: "Bearer " + token.trim() },
           body: fd,
         });
-        const data = await res.json();
+        const data = await res.json().catch(() => ({ error: `HTTP ${res.status}` }));
         if (!res.ok || !data.success) throw new Error(data.error || "上传失败");
       }
       setUploadMsg("上传完成 ✓");
@@ -232,7 +248,7 @@ export function GalleryAdmin({ onClose }: { onClose: () => void; loginUsername: 
           <>
             <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 10 }}>{currentAlbum?.title}</div>
 
-            <input ref={fileRef} type="file" accept="image/jpeg,image/png,image/webp,image/gif,image/heic,image/heif" multiple style={{ display: "none" }} onChange={(e) => onPickFiles(e.target.files)} />
+            <input ref={fileRef} type="file" accept="image/jpeg,image/png,image/webp,image/gif" multiple style={{ display: "none" }} onChange={(e) => onPickFiles(e.target.files)} />
             <button
               onClick={() => fileRef.current?.click()}
               disabled={uploading}

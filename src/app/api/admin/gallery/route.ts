@@ -14,8 +14,6 @@ const ALLOWED: Record<string, string> = {
   "image/png": "png",
   "image/webp": "webp",
   "image/gif": "gif",
-  "image/heic": "heic",
-  "image/heif": "heif",
 };
 
 function pgMsg(e: unknown): string {
@@ -85,6 +83,11 @@ export async function POST(request: NextRequest) {
     const form = await request.formData();
     const albumId = String(form.get("albumId") || "");
     const files = form.getAll("files").filter((f): f is File => f instanceof File);
+    let origNames: string[] = [];
+    const namesRaw = form.get("names");
+    if (typeof namesRaw === "string") {
+      try { origNames = JSON.parse(namesRaw); } catch { origNames = []; }
+    }
     if (!albumId) return fail("缺少 albumId");
     if (files.length === 0) return fail("没有文件");
 
@@ -92,7 +95,7 @@ export async function POST(request: NextRequest) {
     if (!album) return fail("相册不存在");
     for (const f of files) {
       if (f.size > MAX_SIZE) return fail(`「${f.name}」超过 25MB`);
-      if (!ALLOWED[f.type]) return fail(`「${f.name}」格式不支持（只收 jpg/png/webp/gif/heic）`);
+      if (!ALLOWED[f.type]) return fail(`「${f.name}」格式不支持（只收 jpg/png/webp/gif）`);
     }
 
     const r2 = getR2Client();
@@ -170,7 +173,7 @@ export async function POST(request: NextRequest) {
       orderBase += 1;
       const { data: row, error: insErr } = await supabase.from("gallery_photos").insert({
         album_id: albumId,
-        title: file.name.replace(/\.[^.]+$/, "").slice(0, 80),
+        title: (origNames[files.indexOf(file)] || file.name).replace(/\.[^.]+$/, "").slice(0, 80),
         image_key: imageKey,
         image_url: r2PublicUrl(imageKey),
         thumb_key: thumbKey,
@@ -178,7 +181,7 @@ export async function POST(request: NextRequest) {
         width,
         height,
         file_size: imageBuf.length,
-        original_name: file.name.slice(0, 200),
+        original_name: (origNames[files.indexOf(file)] || file.name).slice(0, 200),
         sort_order: orderBase,
       }).select("*").single();
       if (insErr) {
