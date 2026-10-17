@@ -35,17 +35,35 @@ export function GalleryAdmin({ onClose }: { onClose: () => void; loginUsername: 
   const [uploadMsg, setUploadMsg] = useState("");
   const [newTitle, setNewTitle] = useState("");
   const fileRef = useRef<HTMLInputElement>(null);
+  function diagErr(e: unknown, stage: string): string {
+    if (e instanceof DOMException) return `${stage}：浏览器拦截 [${e.name}] ${e.message}`;
+    if (e instanceof Error) {
+      const msg = e.message;
+      if (/string did not match|Failed to fetch|NetworkError/i.test(msg)) {
+        const tokOk = token && token.length > 20 ? `token长度${token.length}` : `token异常("${token.slice(0, 10)}")`;
+        return `${stage}：${msg}；${tokOk}；请试试退出重新登录`;
+      }
+      return `${stage}：${msg}`;
+    }
+    return `${stage}：未知错误`;
+  }
+  async function authGet(url: string, stage: string) {
+    if (!token) throw new Error(stage + "：未登录，请退出重新进");
+    const res = await fetch(url, { headers: { Authorization: "Bearer " + token.trim() } });
+    const data = await res.json().catch(() => ({ error: `HTTP ${res.status}` }));
+    if (!res.ok || !data.success) throw new Error(`${stage}：${data.error || ("HTTP " + res.status)}`);
+    return data;
+  }
+
 
   async function loadAlbums() {
     setLoading(true);
     setError("");
     try {
-      const res = await fetch("/api/admin/gallery", { headers: auth });
-      const data = await res.json();
-      if (!res.ok || !data.success) throw new Error(data.error || "加载失败");
+      const data = await authGet("/api/admin/gallery", "相册列表");
       setAlbums(data.albums || []);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "加载失败");
+      setError(diagErr(e, "相册列表"));
     } finally {
       setLoading(false);
     }
@@ -68,7 +86,7 @@ export function GalleryAdmin({ onClose }: { onClose: () => void; loginUsername: 
       setNewTitle("");
       loadAlbums();
     } catch (e) {
-      setError(e instanceof Error ? e.message : "创建失败");
+      setError(diagErr(e, "新建相册"));
     }
   }
 
@@ -91,12 +109,10 @@ export function GalleryAdmin({ onClose }: { onClose: () => void; loginUsername: 
     setCurrentAlbumId(a.id);
     setLoading(true);
     try {
-      const res = await fetch(`/api/admin/gallery?action=photos&albumId=${a.id}`, { headers: auth });
-      const data = await res.json();
-      if (!res.ok || !data.success) throw new Error(data.error || "加载失败");
+      const data = await authGet(`/api/admin/gallery?action=photos&albumId=${encodeURIComponent(a.id)}`, "图片列表");
       setPhotos(data.photos || []);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "加载失败");
+      setError(diagErr(e, "进入相册"));
     } finally {
       setLoading(false);
     }
@@ -117,7 +133,7 @@ export function GalleryAdmin({ onClose }: { onClose: () => void; loginUsername: 
         setUploadMsg(`上传 ${i + 1}-${Math.min(i + batch, files.length)}/${files.length}`);
         const res = await fetch("/api/admin/gallery", {
           method: "POST",
-          headers: { Authorization: "Bearer " + token },
+          headers: { Authorization: "Bearer " + token.trim() },
           body: fd,
         });
         const data = await res.json();
@@ -130,7 +146,7 @@ export function GalleryAdmin({ onClose }: { onClose: () => void; loginUsername: 
       setTimeout(() => setUploadMsg(""), 2500);
     } catch (e) {
       setUploadMsg("");
-      setError(e instanceof Error ? e.message : "上传失败");
+      setError(diagErr(e, "上传图片"));
     } finally {
       setUploading(false);
       if (fileRef.current) fileRef.current.value = "";
