@@ -1358,7 +1358,7 @@ export default function PhonePage() {
         }
     }, [loginUsername]);
 
-    const [meSubPage, setMeSubPage] = useState<"main" | "settings" | "identity" | "unlock" | "about" | "invite" | "account" | "profile" | "wallpaper" | "theme" | "change-password" | "knob-style" | "bio" | "redeem" | "changelog" | "version-admin">("main");
+    const [meSubPage, setMeSubPage] = useState<"main" | "identity" | "unlock" | "about" | "invite" | "account" | "profile" | "wallpaper" | "theme" | "change-password" | "knob-style" | "bio" | "redeem" | "changelog" | "version-admin">("main");
 
     // 右滑返回：从屏幕左边缘开始向右滑，退回上一级
     useEffect(() => {
@@ -7665,151 +7665,6 @@ export default function PhonePage() {
             );
         }
 
-        if (meSubPage === "settings") {
-            return (
-                <div
-                    style={{
-                        padding: 16
-                    }}>
-                    <div
-                        style={{
-                            fontSize: 16,
-                            fontWeight: 700,
-                            color: "#92400e",
-                            marginBottom: 16
-                        }}>⚙️ 设置</div>
-                    <div className="me-menu-item" onClick={() => {
-                        setCurrentApp("user-profile");
-                    }}>
-                        <span className="me-menu-icon">👤</span>
-                        <span className="me-menu-label">查看我的主页</span>
-                        <span className="me-menu-arrow">›</span>
-                    </div>
-                                        <div className="me-menu-item" onClick={async () => {
-                        setProfileName(loginUsername);
-                        setProfileMsg("");
-                        setProfileAvatar("");
-                        try {
-                            const res = await fetch("/api/auth", {
-                                method: "POST",
-                                headers: { "Content-Type": "application/json" },
-                                body: JSON.stringify({ action: "get_profile", username: loginUsername }),
-                            });
-                            const json = await res.json() as { success?: boolean; profile?: { displayName?: string; avatarUrl?: string } };
-                            if (json.success && json.profile) {
-                                setProfileName(json.profile.displayName || loginUsername);
-                                setProfileAvatar(json.profile.avatarUrl || "");
-                            }
-                        } catch {
-                            // ignore
-                        }
-                        setMeSubPage("profile");
-                    }}>
-                        <span className="me-menu-icon">🪪</span>
-                        <span className="me-menu-label">编辑资料</span>
-                        <span className="me-menu-arrow">›</span>
-                    </div>
-                    <div className="me-menu-item" onClick={() => setMeSubPage("account")}>
-                        <span className="me-menu-icon">🔑</span>
-                        <span className="me-menu-label">账户与密码</span>
-                        <span className="me-menu-arrow">›</span>
-                    </div>
-                    <div className="me-menu-item" onClick={() => setMeSubPage("change-password")}>
-                        <span className="me-menu-icon">🔑</span>
-                        <span className="me-menu-label">修改密码</span>
-                        <span className="me-menu-arrow">›</span>
-                    </div>
-                    <div className="me-menu-item" onClick={() => setMeSubPage("redeem")}>
-                        <span className="me-menu-icon">🎁</span>
-                        <span className="me-menu-label">兑换码</span>
-                        <span className="me-menu-arrow">›</span>
-                    </div>
-                    <div className="me-menu-item" onClick={() => setMeSubPage("knob-style")}>
-                        <span className="me-menu-icon">🎛️</span>
-                        <span className="me-menu-label">悬浮按钮样式</span>
-                        <span className="me-menu-arrow">›</span>
-                    </div>
-                    {isAdmin && (
-                        <>
-                            <div className="me-menu-item" onClick={() => setCurrentApp("admin-review")}>
-                                <span className="me-menu-icon">✅</span>
-                                <span className="me-menu-label">用户审核</span>
-                                <span className="me-menu-arrow">›</span>
-                            </div>
-                            <div className="me-menu-item" onClick={() => setShowNewAdmin(true)}>
-                                <span className="me-menu-icon">🛠️</span>
-                                <span className="me-menu-label">新版管理后台</span>
-                                <span className="me-menu-arrow">›</span>
-                            </div>
-                            <div className="me-menu-item" onClick={() => setMeSubPage("version-admin")}>
-                                <span className="me-menu-icon">📋</span>
-                                <span className="me-menu-label">发布更新日志</span>
-                                <span className="me-menu-arrow">›</span>
-                            </div>
-                            <div className="me-menu-item" onClick={() => setCurrentApp("app-admin")}>
-                                <span className="me-menu-icon">📲</span>
-                                <span className="me-menu-label">应用管理</span>
-                                <span className="me-menu-arrow">›</span>
-                            </div>
-                        </>
-                    )}
-                    <div className="me-menu-item" onClick={() => setMeSubPage("wallpaper")}>
-                        <span className="me-menu-icon">🖼️</span>
-                        <span className="me-menu-label">壁纸</span>
-                        <span className="me-menu-arrow">›</span>
-                    </div>
-                    <div className="me-menu-item" onClick={() => setMeSubPage("theme")}>
-                        <span className="me-menu-icon">🎨</span>
-                        <span className="me-menu-label">主题</span>
-                        <span className="me-menu-arrow">›</span>
-                    </div>
-                    <div className="me-menu-item" onClick={() => setMeSubPage("unlock")}>
-                        <span className="me-menu-icon">{unlockState.unlocked ? "🔓" : "🔒"}</span>
-                        <span className="me-menu-label">{unlockState.unlocked ? "身份已解锁" : "暗号解锁"}</span>
-                        <span className="me-menu-arrow">›</span>
-                    </div>
-                    <div className="me-menu-item" onClick={() => setMeSubPage("changelog")}>
-                        <span className="me-menu-icon">📋</span>
-                        <span className="me-menu-label">更新日志</span>
-                        <span className="me-menu-arrow">›</span>
-                    </div>
-                    <div
-                        className="me-menu-item"
-                        onClick={() => {
-                            setIdentityStep(0);
-                            setIdentityInput("");
-                            setMeSubPage("identity");
-                        }}>
-                        <span className="me-menu-icon">📝</span>
-                        <span className="me-menu-label">编辑自传</span>
-                        <span className="me-menu-arrow">›</span>
-                    </div>
-                    <div
-                        className="me-menu-item"
-                        onClick={() => {
-                            if (confirm("确定要重置所有数据吗？")) {
-                                localStorage.clear();
-                                window.location.reload();
-                            }
-                        }}>
-                        <span className="me-menu-icon">🗑️</span>
-                        <span className="me-menu-label">重置数据</span>
-                        <span className="me-menu-arrow">›</span>
-                    </div>
-                    <button
-                        className="identity-btn"
-                        onClick={() => setMeSubPage("main")}
-                        style={{
-                            marginTop: 16,
-                            width: "100%",
-                            background: "#e5e7eb",
-                            color: "#78350f"
-                        }}>← 返回
-                                  </button>
-                </div>
-            );
-        }
-
         if (meSubPage === "redeem") {
             return <RedeemCodePage authToken={authToken ?? ""} onClose={() => setMeSubPage("main")} />;
         }
@@ -7830,7 +7685,7 @@ export default function PhonePage() {
         }
 
         if (meSubPage === "version-admin") {
-            return <VersionAdminPage authToken={authToken ?? ""} onClose={() => setMeSubPage("settings")} />;
+            return <VersionAdminPage authToken={authToken ?? ""} onClose={() => setMeSubPage("main")} />;
         }
 
         if (meSubPage === "invite") {
@@ -8485,6 +8340,7 @@ export default function PhonePage() {
                     {item("🔑", "账户与密码", () => setMeSubPage("change-password"))}
                     {item("🎟️", "我的邀请码", () => setMeSubPage("invite"))}
                     {item("🎁", "兑换码", () => setMeSubPage("redeem"))}
+                    {item("🔐", unlockState.unlocked ? "身份已解锁" : "暗号解锁", () => setMeSubPage("unlock"))}
 
                     <div className="me-group-label">个性化</div>
                     {item("🖼️", "壁纸", () => setMeSubPage("wallpaper"))}
@@ -10773,7 +10629,7 @@ export default function PhonePage() {
                 </div>
             )}
 
-            {isLoggedIn && !isPageLoading && !currentApp && <VersionPopup onOpenChangelog={() => { setCurrentApp("me"); setMeSubPage("settings"); }} />}
+            {isLoggedIn && !isPageLoading && !currentApp && <VersionPopup onOpenChangelog={() => { setCurrentApp("me"); setMeSubPage("changelog"); }} />}
             {isLoggedIn && !isPageLoading && !currentApp && (
                 <>
                 <div className="phone-screen home-screen">
