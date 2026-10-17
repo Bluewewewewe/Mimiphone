@@ -18,6 +18,16 @@ const ALLOWED: Record<string, string> = {
   "image/heif": "heif",
 };
 
+function pgMsg(e: unknown): string {
+  if (e && typeof e === "object") {
+    const anyErr = e as { message?: string; details?: string; hint?: string; code?: string };
+    const parts = [anyErr.message, anyErr.details, anyErr.hint].filter(Boolean);
+    if (parts.length) return parts.join(" | ");
+    if (anyErr.code) return `数据库错误 ${anyErr.code}`;
+  }
+  return e instanceof Error ? e.message : "服务器错误";
+}
+
 function ok(data: unknown, status = 200) {
   return NextResponse.json({ success: true, ...(typeof data === "object" && data !== null ? (data as object) : { data }) }, { status });
 }
@@ -44,7 +54,7 @@ export async function GET(request: NextRequest) {
       .eq("album_id", albumId)
       .order("sort_order", { ascending: true })
       .order("created_at", { ascending: true });
-    if (error) return fail(error.message, 500);
+    if (error) return fail(pgMsg(error), 500);
     return ok({ photos: data || [] });
   }
 
@@ -54,7 +64,7 @@ export async function GET(request: NextRequest) {
     .select("*")
     .order("sort_order", { ascending: true })
     .order("created_at", { ascending: false });
-  if (error) return fail(error.message, 500);
+  if (error) return fail(pgMsg(error), 500);
   return ok({ albums: data || [] });
 }
 
@@ -174,7 +184,7 @@ export async function POST(request: NextRequest) {
         // 数据库写失败要回滚 R2
         await r2.send(new DeleteObjectCommand({ Bucket: bucket, Key: imageKey })).catch(() => {});
         await r2.send(new DeleteObjectCommand({ Bucket: bucket, Key: thumbKey })).catch(() => {});
-        return fail(`「${file.name}」入库失败：${insErr.message}`, 500);
+        return fail(`「${file.name}」入库失败：${pgMsg(insErr)}`, 500);
       }
       inserted.push(row);
     }
@@ -210,7 +220,7 @@ export async function POST(request: NextRequest) {
       description: body.description || null,
       sort_order: sortOrder,
     }).select("*").single();
-    if (error) return fail(error.message, 500);
+    if (error) return fail(pgMsg(error), 500);
     await logAudit(admin.id, admin.username, "gallery_album_create", "gallery", data.id, { title });
     return ok({ album: data });
   }
@@ -225,7 +235,7 @@ export async function POST(request: NextRequest) {
     if (typeof rest.sort_order === "number") allow.sort_order = rest.sort_order;
     allow.updated_at = new Date().toISOString();
     const { data, error } = await supabase.from("gallery_albums").update(allow).eq("id", id).select("*").single();
-    if (error) return fail(error.message, 500);
+    if (error) return fail(pgMsg(error), 500);
     await logAudit(admin.id, admin.username, "gallery_album_update", "gallery", id, allow);
     return ok({ album: data });
   }
@@ -241,7 +251,7 @@ export async function POST(request: NextRequest) {
       if (p.thumb_key) await r2.send(new DeleteObjectCommand({ Bucket: bucket, Key: p.thumb_key })).catch(() => {});
     }
     const { error } = await supabase.from("gallery_albums").delete().eq("id", id);
-    if (error) return fail(error.message, 500);
+    if (error) return fail(pgMsg(error), 500);
     await logAudit(admin.id, admin.username, "gallery_album_delete", "gallery", id, { photoCount: photos?.length || 0 });
     return ok({});
   }
@@ -254,7 +264,7 @@ export async function POST(request: NextRequest) {
     if (["active", "hidden"].includes(rest.status)) allow.status = rest.status;
     if (typeof rest.sort_order === "number") allow.sort_order = rest.sort_order;
     const { data, error } = await supabase.from("gallery_photos").update(allow).eq("id", id).select("*").single();
-    if (error) return fail(error.message, 500);
+    if (error) return fail(pgMsg(error), 500);
     await logAudit(admin.id, admin.username, "gallery_photo_update", "gallery", id, allow);
     return ok({ photo: data });
   }
