@@ -140,8 +140,8 @@ export async function POST(request: NextRequest) {
         width = meta.width || 0;
         height = meta.height || 0;
         imageBuf = await pipeline
-          .resize(2048, 2048, { fit: "inside", withoutEnlargement: true })
-          .webp({ quality: 82, effort: 4 })
+          .resize(4096, 4096, { fit: "inside", withoutEnlargement: true })
+          .webp({ quality: 84, effort: 4 })
           .toBuffer();
         const outMeta = await sharp(imageBuf).metadata();
         width = outMeta.width || width;
