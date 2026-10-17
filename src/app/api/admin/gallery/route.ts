@@ -76,6 +76,7 @@ export async function POST(request: NextRequest) {
     return fail(e instanceof Error ? e.message : "鉴权失败", 401);
   }
 
+  try {
   const ctype = request.headers.get("content-type") || "";
   const supabase = await getSupabaseClient();
 
@@ -298,4 +299,8 @@ export async function POST(request: NextRequest) {
   }
 
   return fail("未知 action");
+  } catch (e) {
+    console.error("gallery POST fatal:", e);
+    return fail(pgMsg(e), 500);
+  }
 }
