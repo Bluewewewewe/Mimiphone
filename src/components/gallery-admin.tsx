@@ -255,7 +255,7 @@ export function GalleryAdmin({ onClose }: { onClose: () => void; loginUsername: 
               style={{ width: "100%", padding: "14px", borderRadius: 12, border: "2px dashed #f9a8d4", background: "#fff0f6", color: "#be185d", fontSize: 14, fontWeight: 700, cursor: uploading ? "default" : "pointer", marginBottom: 8 }}
             >{uploading ? (uploadMsg || "上传中…") : "📤 选择图片上传（可多选，自动压缩高清 WebP）"}</button>
             <div style={{ fontSize: 11, color: "#8899a6", marginBottom: 12, lineHeight: 1.6 }}>
-              单张原图 ≤25MB；长边压到 2048px、质量 82，同时自动生成缩略图。GIF 保留原样。
+              单张原图 ≤100MB；长边压到 2048px、质量 82，同时自动生成缩略图。GIF 保留原样。
             </div>
 
             {loading ? <div style={{ textAlign: "center", padding: 40, color: "#8899a6" }}>加载中…</div>

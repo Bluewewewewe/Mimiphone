@@ -8,7 +8,7 @@ import sharp from "sharp";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-const MAX_SIZE = 25 * 1024 * 1024; // 原图 25MB
+const MAX_SIZE = 100 * 1024 * 1024; // 原图 100MB
 const ALLOWED: Record<string, string> = {
   "image/jpeg": "jpg",
   "image/png": "png",
@@ -94,7 +94,7 @@ export async function POST(request: NextRequest) {
     const { data: album } = await supabase.from("gallery_albums").select("id").eq("id", albumId).maybeSingle();
     if (!album) return fail("相册不存在");
     for (const f of files) {
-      if (f.size > MAX_SIZE) return fail(`「${f.name}」超过 25MB`);
+      if (f.size > MAX_SIZE) return fail(`「${f.name}」超过 100MB`);
       if (!ALLOWED[f.type]) return fail(`「${f.name}」格式不支持（只收 jpg/png/webp/gif）`);
     }
 
