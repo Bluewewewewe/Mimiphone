@@ -45,6 +45,7 @@ import { BrowserApp } from "@/components/browser-app";
 import AppStoreApp from "@/components/app-store-app";
 import { VersionPopup } from "@/components/version-popup";
 import { ChangelogContent } from "@/components/changelog-app";
+import { VersionAdminPage } from "@/components/version-admin";
 import AppAdminApp from "@/components/admin/app-admin-app";
 import AdminDashboard from "@/components/admin-dashboard";
 
@@ -1357,7 +1358,7 @@ export default function PhonePage() {
         }
     }, [loginUsername]);
 
-    const [meSubPage, setMeSubPage] = useState<"main" | "settings" | "identity" | "unlock" | "about" | "invite" | "account" | "profile" | "wallpaper" | "theme" | "change-password" | "knob-style" | "bio" | "redeem" | "changelog">("main");
+    const [meSubPage, setMeSubPage] = useState<"main" | "settings" | "identity" | "unlock" | "about" | "invite" | "account" | "profile" | "wallpaper" | "theme" | "change-password" | "knob-style" | "bio" | "redeem" | "changelog" | "version-admin">("main");
 
     // 右滑返回：从屏幕左边缘开始向右滑，退回上一级
     useEffect(() => {
@@ -7740,6 +7741,11 @@ export default function PhonePage() {
                                 <span className="me-menu-label">新版管理后台</span>
                                 <span className="me-menu-arrow">›</span>
                             </div>
+                            <div className="me-menu-item" onClick={() => setMeSubPage("version-admin")}>
+                                <span className="me-menu-icon">📋</span>
+                                <span className="me-menu-label">发布更新日志</span>
+                                <span className="me-menu-arrow">›</span>
+                            </div>
                             <div className="me-menu-item" onClick={() => setCurrentApp("app-admin")}>
                                 <span className="me-menu-icon">📲</span>
                                 <span className="me-menu-label">应用管理</span>
@@ -7821,6 +7827,10 @@ export default function PhonePage() {
                     </button>
                 </div>
             );
+        }
+
+        if (meSubPage === "version-admin") {
+            return <VersionAdminPage authToken={authToken ?? ""} onClose={() => setMeSubPage("settings")} />;
         }
 
         if (meSubPage === "invite") {
