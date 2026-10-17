@@ -62,7 +62,7 @@ export function GalleryAdmin({ onClose }: { onClose: () => void; loginUsername: 
 
   async function createAlbum() {
     const title = newTitle.trim();
-    if (!title) return;
+    if (!title) { setError("先输入相册标题再点新建"); return; }
     try {
       await postJson({ action: "create_album", title });
       setNewTitle("");
@@ -186,7 +186,7 @@ export function GalleryAdmin({ onClose }: { onClose: () => void; loginUsername: 
                 placeholder="新相册标题，如：官方壁纸第一弹"
                 style={{ flex: 1, border: "1px solid #d8dee4", borderRadius: 10, padding: "9px 12px", fontSize: 13, outline: "none" }}
               />
-              <button onClick={createAlbum} style={{ background: "#f91880", color: "#fff", border: "none", borderRadius: 10, padding: "0 16px", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>新建</button>
+              <button onClick={createAlbum} disabled={!newTitle.trim()} style={{ background: newTitle.trim() ? "#f91880" : "#cbd5e1", color: "#fff", border: "none", borderRadius: 10, padding: "0 16px", fontSize: 13, fontWeight: 700, cursor: newTitle.trim() ? "pointer" : "default" }}>新建</button>
             </div>
 
             {loading ? <div style={{ textAlign: "center", padding: 40, color: "#8899a6" }}>加载中…</div>
