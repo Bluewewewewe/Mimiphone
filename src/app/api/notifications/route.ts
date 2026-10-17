@@ -64,6 +64,42 @@ export async function GET(request: NextRequest) {
   const url = new URL(request.url);
   const action = url.searchParams.get("action") || "list";
 
+  // 版本更新内容面向全体用户（含未登录时的开屏弹窗），这两个只读 action 免鉴权
+  if (action === "latest_version" || action === "versions_list") {
+    const supabase = await getSupabaseClient();
+    try {
+      if (action === "latest_version") {
+        const { data, error } = await supabase
+          .from("app_versions")
+          .select("version, title, content, type, popup_text, published_at")
+          .eq("show_in_popup", true)
+          .order("published_at", { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        if (error) {
+          if (isTableNotFound(error)) return jsonOk({ data: null });
+          throw error;
+        }
+        return jsonOk({ data: data || null });
+      }
+      const page = Math.max(1, parseInt(url.searchParams.get("page") || "1", 10));
+      const pageSize = Math.min(50, Math.max(1, parseInt(url.searchParams.get("pageSize") || String(DEFAULT_PAGE_SIZE), 10)));
+      const from = (page - 1) * pageSize;
+      const { data, error, count } = await supabase
+        .from("app_versions")
+        .select("*", { count: "exact" })
+        .order("published_at", { ascending: false })
+        .range(from, from + pageSize - 1);
+      if (error) {
+        if (isTableNotFound(error)) return jsonErr("版本表未初始化", 500, { code: "TABLE_NOT_FOUND" });
+        throw error;
+      }
+      return jsonOk({ data: data || [], total: count || 0, page, pageSize });
+    } catch (e) {
+      return jsonErr((e as Error).message, 500);
+    }
+  }
+
   let user: VerifiedUser;
   try {
     user = await requireNotifAuth(request);
@@ -132,51 +168,6 @@ export async function GET(request: NextRequest) {
           throw error;
         }
         return jsonOk({ count: count || 0 });
-      }
-
-      // ---- 最新版本（弹窗用） ----
-      case "latest_version": {
-        const { data, error } = await supabase
-          .from("app_versions")
-          .select("version, title, content, type, popup_text, published_at")
-          .eq("show_in_popup", true)
-          .order("published_at", { ascending: false })
-          .limit(1)
-          .maybeSingle();
-
-        if (error) {
-          if (isTableNotFound(error)) {
-            return jsonOk({ data: null });
-          }
-          throw error;
-        }
-        return jsonOk({ data: data || null });
-      }
-
-      // ---- 版本列表（公开） ----
-      case "versions_list": {
-        const page = Math.max(1, parseInt(url.searchParams.get("page") || "1", 10));
-        const pageSize = Math.min(50, Math.max(1, parseInt(url.searchParams.get("pageSize") || String(DEFAULT_PAGE_SIZE), 10)));
-        const from = (page - 1) * pageSize;
-
-        const { data, error, count } = await supabase
-          .from("app_versions")
-          .select("*", { count: "exact" })
-          .order("published_at", { ascending: false })
-          .range(from, from + pageSize - 1);
-
-        if (error) {
-          if (isTableNotFound(error)) {
-            return jsonErr("版本表未初始化", 500, { code: "TABLE_NOT_FOUND" });
-          }
-          throw error;
-        }
-        return jsonOk({
-          data: data || [],
-          total: count || 0,
-          page,
-          pageSize,
-        });
       }
 
       default:
